@@ -1,13 +1,12 @@
 use either::Either;
 use winnow::branch::alt;
-use winnow::bytes::{tag, tag_no_case, take, none_of, take_until0, any, take_while0};
-use winnow::character::{alpha0, alpha1, crlf, digit1, escaped_transform, space1};
-use winnow::combinator::{cut_err, opt};
+use winnow::bytes::{tag, tag_no_case};
+use winnow::ascii::{alpha0, crlf, digit1, escaped_transform, space1};
+use winnow::combinator::{cut_err, opt, repeat};
 use winnow::error::{ErrorKind, VerboseError, ParseError};
 use winnow::{IResult, Parser};
-use winnow::multi::{length_data, many0};
+use winnow::multi::{length_data};
 use winnow::sequence::{delimited, preceded, separated_pair, terminated};
-use winnow::stream::ContainsToken;
 
 type Input<'i> = &'i str;
 pub type ParseResult<'i, T> = IResult<Input<'i>, T, VerboseError<Input<'i>>>;
@@ -108,7 +107,7 @@ pub(crate) fn bye(input: Input) -> ParseResult<OkNoBye> {
 }
 
 pub(crate) fn nobye(input: Input) -> ParseResult<OkNoBye> {
-    alt((no, bye))(input)
+    alt((no, bye)).parse_next(input)
 }
 
 fn atom(input: Input) -> ParseResult<ResponseCode> {
@@ -138,9 +137,9 @@ fn test_atom() {
 
 fn literal_s2c_len(input: Input) -> ParseResult<u64> {
     terminated(
-        delimited(tag("{"), digit1.map_res(|s: &str| s.parse::<u64>()), tag("}")),
+        delimited(tag("{"), digit1.try_map(|s: &str| s.parse::<u64>()), tag("}")),
         crlf,
-    )(input)
+    ).parse_next(input)
 }
 
 #[test]
@@ -164,7 +163,7 @@ fn test_literal_s2c() {
 }
 
 fn sievestring_s2c(input: Input) -> ParseResult<String> {
-    alt((literal_s2c, quoted_string))(input)
+    alt((literal_s2c, quoted_string)).parse_next(input)
 }
 
 #[test]
@@ -177,11 +176,11 @@ fn literal_c2s_len(input: Input) -> ParseResult<u64> {
     terminated(
         delimited(
             tag("{"),
-            digit1.map_res(|s: &str| s.parse::<u64>()),
+            digit1.try_map(|s: &str| s.parse::<u64>()),
             alt((tag("+}"), tag("}"))),
         ),
         crlf,
-    )(input)
+    ).parse_next(input)
 }
 
 #[test]
@@ -202,7 +201,7 @@ fn test_literal_c2s() {
 }
 
 fn sievestring_c2s(input: Input) -> ParseResult<String> {
-    alt((literal_c2s, quoted_string))(input)
+    alt((literal_c2s, quoted_string)).parse_next(input)
 }
 
 #[test]
@@ -212,7 +211,7 @@ fn test_sievestring_c2s() {
 }
 
 fn code(input: Input) -> ParseResult<(ResponseCode, Option<String>)> {
-    delimited(tag("("), (atom, opt(preceded(space1, sievestring_s2c))), tag(")"))(input)
+    delimited(tag("("), (atom, opt(preceded(space1, sievestring_s2c))), tag(")")).parse_next(input)
 }
 
 #[test]
@@ -231,11 +230,6 @@ fn test_code() {
     );
 }
 
-
-fn t() -> impl ContainsToken<char> {
-    todo!()
-}
-
 fn quoted_string(input: Input) -> ParseResult<String> {
     delimited(
         tag("\""),
@@ -249,7 +243,7 @@ fn quoted_string(input: Input) -> ParseResult<String> {
             ))
         ),
         tag("\"")
-    )(input)
+    ).parse_next(input)
 }
 
 #[test]
@@ -263,7 +257,7 @@ pub fn sieve_name_c2s(input: Input) -> ParseResult<String> {
     match sievestring_c2s(input) {
         Err(e) => Err(e),
         Ok((rest, s)) => match s.chars().find(|c| is_bad_sieve_name_char(*c)) {
-            Some(_) => Err(winnow::error::ErrMode::Cut(ParseError::from_error_kind(input, ErrorKind::Char))),
+            Some(_) => Err(winnow::error::ErrMode::Cut(ParseError::from_error_kind(input, ErrorKind::Tag))),
             None => Ok((rest, s)),
         },
     }
@@ -279,7 +273,7 @@ fn test_sieve_name_c2s() {
 }
 
 pub fn active_sieve_name(input: Input) -> ParseResult<Option<String>> {
-    opt(sieve_name_c2s)(input)
+    opt(sieve_name_c2s).parse_next(input)
 }
 
 #[test]
@@ -302,7 +296,7 @@ pub fn response_ok(input: Input) -> ParseResult<Response> {
             },
         ),
         crlf,
-    )(input)
+    ).parse_next(input)
 }
 
 pub fn response_nobye(input: Input) -> ParseResult<Response> {
@@ -315,11 +309,11 @@ pub fn response_nobye(input: Input) -> ParseResult<Response> {
             },
         ),
         crlf,
-    )(input)
+    ).parse_next(input)
 }
 
 pub fn response_oknobye(input: Input) -> ParseResult<Response> {
-    alt((response_ok, response_nobye))(input)
+    alt((response_ok, response_nobye)).parse_next(input)
 }
 
 #[test]
@@ -340,7 +334,7 @@ pub fn response_getscript(input: Input) -> ParseResult<(Option<String>, Response
     alt((
         separated_pair(sievestring_s2c, crlf, response_ok).map(|(s, r)| (Some(s), r)),
         response_nobye.map(|r| (None, r)),
-    ))(input)
+    )).parse_next(input)
 }
 
 #[test]
@@ -352,7 +346,7 @@ fn test_response_getscript() {
 
 pub fn response_listscripts(input: Input) -> ParseResult<(Vec<(String, bool)>, Response)> {
     (
-        many0(terminated(
+        repeat(0.., terminated(
             (sievestring_s2c, opt((space1, tag_no_case("ACTIVE"))).map(|o| o.is_some())),
             crlf,
         )),
@@ -380,7 +374,7 @@ fn space_separated_string_s2c(input: Input) -> ParseResult<Vec<String>> {
 }
 
 fn space_separated_string_not_empty_s2c(input: Input) -> ParseResult<Vec<String>> {
-    sievestring_s2c.map_res(|s| {
+    sievestring_s2c.try_map(|s| {
         if s.is_empty() {
             Err("expected non-empty space-separated string, found empty string")
         } else {
@@ -390,7 +384,7 @@ fn space_separated_string_not_empty_s2c(input: Input) -> ParseResult<Vec<String>
 }
 
 fn number_string_s2c(input: Input) -> ParseResult<u64> {
-    sievestring_s2c.map_res(|s| s.parse::<u64>()).parse_next(input)
+    sievestring_s2c.try_map(|s| s.parse::<u64>()).parse_next(input)
 }
 
 fn version(input: Input) -> ParseResult<Version> {
@@ -398,14 +392,14 @@ fn version(input: Input) -> ParseResult<Version> {
         tag("\""),
 
             separated_pair(
-                digit1.map_res(|s: &str| s.parse::<u64>()),
+                digit1.try_map(|s: &str| s.parse::<u64>()),
                 tag("."),
-                digit1.map_res(|s: &str| s.parse::<u64>()),
+                digit1.try_map(|s: &str| s.parse::<u64>()),
             ).map(
             |(major, minor)| Version { major, minor },
         ),
         tag("\""),
-    )(input)
+    ).parse_next(input)
 }
 
 fn single_capability(input: Input) -> ParseResult<Capability> {
@@ -444,7 +438,7 @@ fn single_capability(input: Input) -> ParseResult<Capability> {
             }),
         )),
         crlf,
-    )(input)
+    ).parse_next(input)
 }
 
 #[test]
@@ -455,7 +449,7 @@ fn test_single_capability() {
 }
 
 pub fn response_capabilities(input: Input) -> ParseResult<(Vec<Capability>, Response)> {
-    (many0(single_capability), response_oknobye).parse_next(input)
+    (repeat(0.., single_capability), response_oknobye).parse_next(input)
 }
 
 #[test]
@@ -510,7 +504,7 @@ pub fn response_starttls(input: Input) -> ParseResult<(Vec<Capability>, Response
     alt((
         preceded(response_ok, response_capabilities),
         response_nobye.map(|r| (Vec::new(), r)),
-    ))(input)
+    )).parse_next(input)
 }
 
 #[test]
@@ -525,7 +519,7 @@ pub fn response_authenticate_initial(input: Input) -> ParseResult<Either<String,
     alt((
         terminated(sievestring_s2c, crlf).map(|s| Either::Left(s)),
         response_nobye.map(|r| Either::Right(r)),
-    ))(input)
+    )).parse_next(input)
 }
 
 #[test]
@@ -545,7 +539,7 @@ pub fn response_authenticate_complete(
             Some((s, r)) => (Some(s), r),
         }),
         response_nobye.map(|r| (None, r)),
-    ))(input)
+    )).parse_next(input)
 }
 
 #[test]
