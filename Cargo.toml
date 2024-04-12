@@ -7,5 +7,27 @@ license = "MIT OR Apache-2.0"
 description = "Support for parsing ManageSieve protocol (RFC 5804)"
 
 [dependencies]
-nom = "6.2.0"
+snafu = "0.8.2"
+
+futures = "0.3.30"
+
+nom = "7.1.3"
+nom-supreme = "0.8.0"
 either = "1.6.1"
+
+http-auth-basic = "0.3.3"
+
+[dev-dependencies]
+clap = { version = "4.5.4", features = [
+    "derive",
+    "env",
+] }
+tokio = { version = "1.37.0", features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+]}
+tokio-util = { version = "0.7.10", features = [
+    "compat",
+]}
+eyre = "0.6.12"
