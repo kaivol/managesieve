@@ -1,15 +1,8 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::fmt::Display;
-use std::io::{self, ErrorKind};
-use std::string::ToString;
 
-use nom;
-use nom::IResult;
 use snafu::Snafu;
 
-use crate::internal::parser as p;
 use crate::internal::parser::{Capability, ParseResult, Response, Version};
 
 #[derive(Snafu, PartialEq, Debug)]
@@ -43,7 +36,7 @@ fn response_helper<T, I>(
     match parse(input) {
         Ok((left, _)) if !left.is_empty() => Some(Err(Error::ResponseTooLong)),
         Ok((_, response)) => Some(transform(response)),
-        Err(nom::Err::Incomplete(_)) => None,
+        Err(winnow::error::ErrMode::Incomplete(_)) => None,
         _ => Some(Err(Error::InvalidResponse)),
     }
 }
@@ -116,77 +109,77 @@ pub fn response_authenticate(_input: &str) -> Option<Result<Response, Error>> {
     unimplemented!()
 }
 
-/// Parses text returned from the server in response to the STARTTLS command.
-/// Returns list of capabilities and optional additional strings.
-pub fn response_starttls(input: &str) -> Option<Result<(Capabilities, Response), Error>> {
-    response_helper(input, p::response_starttls, verify_capabilities)
-}
-
-/// Parses text returned from the server in response to the LOGOUT command.
-pub fn response_logout(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the CAPABILITY command.
-/// Returns list of capabilities and optional additional strings.
-pub fn response_capability(input: &str) -> Option<Result<(Capabilities, Response), Error>> {
-    response_helper(input, p::response_capabilities, verify_capabilities)
-}
-
-/// Parses text returned from the server in response to the HAVESPACE command.
-pub fn response_havespace(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the PUTSCRIPT command.
-pub fn response_putscript(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the LISTSCRIPTS command.
-/// Returns list of scripts and a bool indicating if that script is the active
-/// script.
-pub fn response_listscripts(input: &str) -> Option<Result<(Vec<(String, bool)>, Response), Error>> {
-    response_helper(input, p::response_listscripts, |(s, resp)| {
-        if s.iter().filter(|(_, is_active)| *is_active).count() > 1 {
-            Err(Error::MultipleActiveScripts)
-        } else {
-            Ok((s, resp))
-        }
-    })
-}
-
-/// Parses text returned from the server in response to the GETSCRIPT command.
-pub fn response_setactive(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the GETSCRIPT command.
-pub fn response_getscript(input: &str) -> Option<Result<(Option<String>, Response), Error>> {
-    response_helper(input, p::response_getscript, Ok)
-}
-
-/// Parses text returned from the server in response to the DELETESCRIPT command.
-pub fn response_deletescript(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the RENAMESCRIPT command.
-pub fn response_renamescript(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the CHECKSCRIPT command.
-pub fn response_checkscript(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
-
-/// Parses text returned from the server in response to the NOOP command.
-pub fn response_noop(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_ok, Ok)
-}
-
-/// Parses text returned from the server in response to the UNAUTHENTICATE command.
-pub fn response_unauthenticate(input: &str) -> Option<Result<Response, Error>> {
-    response_helper(input, p::response_oknobye, Ok)
-}
+// Parses text returned from the server in response to the STARTTLS command.
+// Returns list of capabilities and optional additional strings.
+// pub fn response_starttls(input: &str) -> Option<Result<(Capabilities, Response), Error>> {
+//     response_helper(input, p::response_starttls, verify_capabilities)
+// }
+//
+// /// Parses text returned from the server in response to the LOGOUT command.
+// pub fn response_logout(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the CAPABILITY command.
+// /// Returns list of capabilities and optional additional strings.
+// pub fn response_capability(input: &str) -> Option<Result<(Capabilities, Response), Error>> {
+//     response_helper(input, p::response_capabilities, verify_capabilities)
+// }
+//
+// /// Parses text returned from the server in response to the HAVESPACE command.
+// pub fn response_havespace(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the PUTSCRIPT command.
+// pub fn response_putscript(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the LISTSCRIPTS command.
+// /// Returns list of scripts and a bool indicating if that script is the active
+// /// script.
+// pub fn response_listscripts(input: &str) -> Option<Result<(Vec<(String, bool)>, Response), Error>> {
+//     response_helper(input, p::response_listscripts, |(s, resp)| {
+//         if s.iter().filter(|(_, is_active)| *is_active).count() > 1 {
+//             Err(Error::MultipleActiveScripts)
+//         } else {
+//             Ok((s, resp))
+//         }
+//     })
+// }
+//
+// /// Parses text returned from the server in response to the GETSCRIPT command.
+// pub fn response_setactive(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the GETSCRIPT command.
+// pub fn response_getscript(input: &str) -> Option<Result<(Option<String>, Response), Error>> {
+//     response_helper(input, p::response_getscript, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the DELETESCRIPT command.
+// pub fn response_deletescript(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the RENAMESCRIPT command.
+// pub fn response_renamescript(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the CHECKSCRIPT command.
+// pub fn response_checkscript(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the NOOP command.
+// pub fn response_noop(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_ok, Ok)
+// }
+//
+// /// Parses text returned from the server in response to the UNAUTHENTICATE command.
+// pub fn response_unauthenticate(input: &str) -> Option<Result<Response, Error>> {
+//     response_helper(input, p::response_oknobye, Ok)
+// }

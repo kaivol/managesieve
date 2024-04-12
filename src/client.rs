@@ -11,7 +11,7 @@ use futures::{
     AsyncWriteExt, StreamExt,
 };
 
-use crate::internal::response::response_capability;
+// use crate::internal::response::response_capability;
 
 trait Mode {}
 pub struct Authenticated {}
@@ -28,8 +28,8 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, Unauthenticated>
     pub async fn new(stream: STREAM) -> Self {
         let stream = BufReader::new(stream);
 
-        let (stream, res) = next_response(response_capability, stream).await;
-        dbg!(res);
+        // let (stream, res) = next_response(response_capability, stream).await;
+        // dbg!(res);
 
         Self {
             stream,
