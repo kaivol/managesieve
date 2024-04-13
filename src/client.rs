@@ -1,14 +1,13 @@
 use core::str;
 use std::future::Future;
-use std::io::ErrorKind;
+
 use std::marker::PhantomData;
-use std::pin::{pin, Pin};
+use std::pin::{Pin};
 use std::task::{ready, Poll};
 
-use futures::io::{BufReader, Lines};
+use futures::io::{BufReader};
 use futures::{
-    pin_mut, stream, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite,
-    AsyncWriteExt, StreamExt,
+    AsyncRead, AsyncReadExt, AsyncWrite, StreamExt,
 };
 
 // use crate::internal::response::response_capability;
@@ -40,7 +39,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, Unauthenticated>
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, MODE: Mode> Connection<STREAM, MODE> {
     pub async fn capabilities(&mut self) -> Result<Vec<u8>, ()> {
-        let command = crate::internal::command::Command::capability().to_string();
+        let _command = crate::internal::command::Command::capability().to_string();
         // self.stream.write_all(command.as_bytes()).await?;
         // let mut buf = vec![];
         // let res = self.inner.read_to_end(&mut buf).await?;

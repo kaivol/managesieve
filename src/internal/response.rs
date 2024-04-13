@@ -29,9 +29,9 @@ pub struct Capabilities {
 }
 
 fn response_helper<T, I>(
-    input: &str,
-    parse: impl Fn(&str) -> ParseResult<I>,
-    transform: impl Fn(I) -> Result<T, Error>,
+    _input: &str,
+    _parse: impl Fn(&str) -> ParseResult<I>,
+    _transform: impl Fn(I) -> Result<T, Error>,
 ) -> Option<Result<T, Error>> {
     // match parse(input) {
     //     Ok((left, _)) if !left.is_empty() => Some(Err(Error::ResponseTooLong)),

@@ -23,7 +23,7 @@ pub async fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
     let tcp = TcpStream::connect((args.address, args.port)).await?;
-    let mut sieve = Connection::new(tcp.compat()).await;
+    let _sieve = Connection::new(tcp.compat()).await;
 
     // let caps = sieve.capabilities().await?;
     // println!("result={}", String::from_utf8_lossy(&caps));

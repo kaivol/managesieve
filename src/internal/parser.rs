@@ -1,18 +1,16 @@
-use std::num::NonZeroUsize;
-use std::ops::Not;
+
+
 use std::str::FromStr;
 
 use ascii::Caseless;
 use either::Either;
-use winnow::ascii::{alpha0, alphanumeric0, crlf, digit1, escaped_transform, space1};
+use winnow::ascii::{crlf, digit1, escaped_transform, space1};
 use winnow::binary::{length_take};
 use winnow::combinator::{alt, cut_err, opt, repeat};
 use winnow::combinator::{delimited, preceded, separated_pair, terminated};
-use winnow::error::{
-    ContextError, ErrMode, ErrorKind, Needed, ParseError, ParserError, StrContext,
-};
-use winnow::token::{literal, take_while};
-use winnow::{ascii, IResult, PResult, Parser, Partial};
+use winnow::error::{ContextError, ErrMode, Needed};
+use winnow::token::{take_while};
+use winnow::{ascii, PResult, Parser, Partial};
 
 type Input<'a, 'b> = &'a mut Partial<&'b str>;
 pub type ParseResult<T> = PResult<T, ErrMode<ContextError>>;
@@ -116,7 +114,7 @@ macro_rules! assert_parse_success {
 
 macro_rules! assert_parse_incomplete {
     ($parser:path, $input:literal, $result:literal) => {
-        assert_parse_incomplete!(inner; $parser, $input, Needed::Size(NonZeroUsize::new($result).unwrap()));
+        assert_parse_incomplete!(inner; $parser, $input, winnow::error::Needed::Size(core::num::NonZeroUsize::new($result).unwrap()));
     };
     ($parser:path, $input:literal, $result:expr) => {
         assert_parse_incomplete!(inner; $parser, $input, $result);
@@ -582,8 +580,8 @@ fn test_response_starttls() {
 /// response.
 pub fn response_authenticate_initial(input: Input) -> ParseResult<Either<String, Response>> {
     alt((
-        terminated(sievestring_s2c, crlf).map(|s| Either::Left(s)),
-        response_nobye.map(|r| Either::Right(r)),
+        terminated(sievestring_s2c, crlf).map(Either::Left),
+        response_nobye.map(Either::Right),
     ))
     .parse_next(input)
 }
