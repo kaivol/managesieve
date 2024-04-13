@@ -1,15 +1,21 @@
-use either::Either;
-use winnow::branch::alt;
-use winnow::bytes::{tag, tag_no_case};
-use winnow::ascii::{alpha0, crlf, digit1, escaped_transform, space1};
-use winnow::combinator::{cut_err, opt, repeat};
-use winnow::error::{ErrorKind, VerboseError, ParseError};
-use winnow::{IResult, Parser};
-use winnow::multi::{length_data};
-use winnow::sequence::{delimited, preceded, separated_pair, terminated};
+use std::num::NonZeroUsize;
+use std::ops::Not;
+use std::str::FromStr;
 
-type Input<'i> = &'i str;
-pub type ParseResult<'i, T> = IResult<Input<'i>, T, VerboseError<Input<'i>>>;
+use ascii::Caseless;
+use either::Either;
+use winnow::ascii::{alpha0, alphanumeric0, crlf, digit1, escaped_transform, space1};
+use winnow::binary::{length_take};
+use winnow::combinator::{alt, cut_err, opt, repeat};
+use winnow::combinator::{delimited, preceded, separated_pair, terminated};
+use winnow::error::{
+    ContextError, ErrMode, ErrorKind, Needed, ParseError, ParserError, StrContext,
+};
+use winnow::token::{literal, take_while};
+use winnow::{ascii, IResult, PResult, Parser, Partial};
+
+type Input<'a, 'b> = &'a mut Partial<&'b str>;
+pub type ParseResult<T> = PResult<T, ErrMode<ContextError>>;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum OkNoBye {
@@ -63,6 +69,16 @@ pub struct Response {
     pub human: Option<HumanReadableString>,
 }
 
+impl Response {
+    pub const fn new(tag: OkNoBye) -> Response {
+        Self {
+            tag,
+            code: None,
+            human: None,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Version {
     major: u64,
@@ -83,6 +99,40 @@ pub enum Capability {
     Unknown(String, Option<String>),
 }
 
+macro_rules! assert_parse_success {
+    ($parser:path, $input:literal) => {
+        let mut input = Partial::new($input);
+        $parser(&mut input).unwrap();
+    };
+    ($parser:path, $input:literal, $result:expr) => {
+        assert_parse_success!($parser, $input, $result, "")
+    };
+    ($parser:path, $input:literal, $result:expr, $rest:literal) => {
+        let mut input = Partial::new($input);
+        assert_eq!($parser(&mut input), Ok($result));
+        assert_eq!(input, Partial::new($rest));
+    };
+}
+
+macro_rules! assert_parse_incomplete {
+    ($parser:path, $input:literal, $result:literal) => {
+        assert_parse_incomplete!(inner; $parser, $input, Needed::Size(NonZeroUsize::new($result).unwrap()));
+    };
+    ($parser:path, $input:literal, $result:expr) => {
+        assert_parse_incomplete!(inner; $parser, $input, $result);
+    };
+    (inner; $parser:path, $input:literal, $result:expr) => {
+        let mut input = Partial::new($input);
+        assert_eq!($parser(&mut input), Err(ErrMode::Incomplete($result)));
+    };
+}
+
+macro_rules! assert_parse_error {
+    ($parser:path, $input:literal) => {
+        let mut input = Partial::new($input);
+        assert!(matches!($parser(&mut input), Err(ErrMode::Cut(_) | ErrMode::Backtrack(_))));
+    };
+}
 
 // see section 1.6 of rfc 5804
 pub fn is_bad_sieve_name_char(c: char) -> bool {
@@ -95,15 +145,15 @@ pub fn is_bad_sieve_name_char(c: char) -> bool {
 }
 
 pub(crate) fn ok(input: Input) -> ParseResult<OkNoBye> {
-    tag_no_case("OK").value(OkNoBye::Ok).parse_next(input)
+    Caseless("OK").value(OkNoBye::Ok).parse_next(input)
 }
 
 pub(crate) fn no(input: Input) -> ParseResult<OkNoBye> {
-    tag_no_case("NO").value(OkNoBye::No).parse_next(input)
+    Caseless("NO").value(OkNoBye::No).parse_next(input)
 }
 
 pub(crate) fn bye(input: Input) -> ParseResult<OkNoBye> {
-    tag_no_case("BYE").value(OkNoBye::Bye).parse_next(input)
+    Caseless("BYE").value(OkNoBye::Bye).parse_next(input)
 }
 
 pub(crate) fn nobye(input: Input) -> ParseResult<OkNoBye> {
@@ -112,54 +162,52 @@ pub(crate) fn nobye(input: Input) -> ParseResult<OkNoBye> {
 
 fn atom(input: Input) -> ParseResult<ResponseCode> {
     alt((
-        tag_no_case("AUTH-TOO-WEAK").value(ResponseCode::AuthTooWeak),
-        tag_no_case("ENCRYPT-NEEDED").value(ResponseCode::EncryptNeeded),
-        tag_no_case("QUOTA/MAXSCRIPTS").value(ResponseCode::Quota(QuotaVariant::None)),
-        tag_no_case("QUOTA/MAXSIZE").value(ResponseCode::Quota(QuotaVariant::MaxScripts)),
-        tag_no_case("QUOTA").value(ResponseCode::Quota(QuotaVariant::MaxSize)),
-        tag_no_case("REFERRAL").value(ResponseCode::Referral(SieveUrl::new())),
-        tag_no_case("SASL").value(ResponseCode::Sasl),
-        tag_no_case("TRANSITION-NEEDED").value(ResponseCode::TransitionNeeded),
-        tag_no_case("TRYLATER").value(ResponseCode::TryLater),
-        tag_no_case("ACTIVE").value(ResponseCode::Active),
-        tag_no_case("NONEXISTENT").value(ResponseCode::Nonexistent),
-        tag_no_case("ALREADYEXISTS").value(ResponseCode::AlreadyExists),
-        tag_no_case("TAG").value(ResponseCode::Tag),
-        tag_no_case("WARNINGS").value(ResponseCode::Warnings),
-    )).parse_next(input)
+        Caseless("AUTH-TOO-WEAK").value(ResponseCode::AuthTooWeak),
+        Caseless("ENCRYPT-NEEDED").value(ResponseCode::EncryptNeeded),
+        Caseless("QUOTA/MAXSCRIPTS").value(ResponseCode::Quota(QuotaVariant::MaxScripts)),
+        Caseless("QUOTA/MAXSIZE").value(ResponseCode::Quota(QuotaVariant::MaxSize)),
+        Caseless("QUOTA").value(ResponseCode::Quota(QuotaVariant::None)),
+        Caseless("REFERRAL").value(ResponseCode::Referral(SieveUrl::new())),
+        Caseless("SASL").value(ResponseCode::Sasl),
+        Caseless("TRANSITION-NEEDED").value(ResponseCode::TransitionNeeded),
+        Caseless("TRYLATER").value(ResponseCode::TryLater),
+        Caseless("ACTIVE").value(ResponseCode::Active),
+        Caseless("NONEXISTENT").value(ResponseCode::Nonexistent),
+        Caseless("ALREADYEXISTS").value(ResponseCode::AlreadyExists),
+        Caseless("TAG").value(ResponseCode::Tag),
+        Caseless("WARNINGS").value(ResponseCode::Warnings),
+    ))
+    .parse_next(input)
 }
 
 #[test]
 fn test_atom() {
-    assert_eq!(atom.parse_next("SASL"), Ok(("", ResponseCode::Sasl)));
-    assert!(atom.parse_next("ABCDE").is_err());
+    assert_parse_success!(atom, "SASL", ResponseCode::Sasl);
+    assert_parse_error!(atom, "ABCDE");
 }
 
 fn literal_s2c_len(input: Input) -> ParseResult<u64> {
-    terminated(
-        delimited(tag("{"), digit1.try_map(|s: &str| s.parse::<u64>()), tag("}")),
-        crlf,
-    ).parse_next(input)
+    terminated(delimited("{", digit1.try_map(u64::from_str), "}"), crlf).parse_next(input)
 }
 
 #[test]
 fn test_literal_s2c_len() {
-    assert!(matches!(literal_s2c_len("{3}\r\n"), Ok(("", 3))));
-    assert!(matches!(literal_s2c_len("{0}\r\n"), Ok(("", 0))));
-    assert!(matches!(literal_s2c_len("{3}"), Err(_)));
-    assert!(matches!(literal_s2c_len("{3}\r\nab"), Ok(("ab", 3))));
+    assert_parse_success!(literal_s2c_len, "{3}\r\n", 3);
+    assert_parse_success!(literal_s2c_len, "{0}\r\n", 0);
+    assert_parse_success!(literal_s2c_len, "{3}\r\nab", 3, "ab");
+    assert_parse_incomplete!(literal_s2c_len, "{3}", 2);
 }
 
 // Needs to return String because quoted_string does too.
 fn literal_s2c(input: Input) -> ParseResult<String> {
-    length_data(literal_s2c_len).map(|s| s.to_owned()).parse_next(input)
+    length_take(literal_s2c_len).map(ToOwned::to_owned).parse_next(input)
 }
 
 #[test]
 fn test_literal_s2c() {
-    assert_eq!(literal_s2c("{3}\r\nabc").unwrap().1, "abc");
-    assert!(literal_s2c("{4}\r\nabc").is_err());
-    assert!(literal_s2c("{0}\r\n").is_ok());
+    assert_parse_success!(literal_s2c, "{3}\r\nabc", "abc".into());
+    assert_parse_success!(literal_s2c, "{0}\r\n", "".into());
+    assert_parse_incomplete!(literal_s2c, "{4}\r\nabc", Needed::Unknown);
 }
 
 fn sievestring_s2c(input: Input) -> ParseResult<String> {
@@ -168,36 +216,28 @@ fn sievestring_s2c(input: Input) -> ParseResult<String> {
 
 #[test]
 fn test_sievestring_s2c() {
-    assert_eq!(sievestring_s2c("{3}\r\nabc").unwrap().1, "abc");
-    assert_eq!(sievestring_s2c("\"hello\"").unwrap().1, "hello");
+    assert_parse_success!(sievestring_s2c, "{3}\r\nabc", "abc".into());
+    assert_parse_success!(sievestring_s2c, "\"hello\"", "hello".into());
 }
 
 fn literal_c2s_len(input: Input) -> ParseResult<u64> {
-    terminated(
-        delimited(
-            tag("{"),
-            digit1.try_map(|s: &str| s.parse::<u64>()),
-            alt((tag("+}"), tag("}"))),
-        ),
-        crlf,
-    ).parse_next(input)
+    terminated(delimited("{", digit1.try_map(u64::from_str), "+}"), crlf).parse_next(input)
 }
 
 #[test]
 fn test_literal_c2s_len() {
-    test_literal_s2c_len();
-    assert!(matches!(literal_c2s_len("{3+}\r\n"), Ok(("", 3))));
+    assert_parse_success!(literal_c2s_len, "{3+}\r\n", 3);
 }
 
 fn literal_c2s(input: Input) -> ParseResult<String> {
-    length_data(literal_c2s_len).map(ToOwned::to_owned).parse_next(input)
+    length_take(literal_c2s_len).map(ToOwned::to_owned)
+        .parse_next(input)
 }
 
 #[test]
 fn test_literal_c2s() {
-    test_literal_s2c();
-    assert_eq!(literal_c2s("{3+}\r\nabc").unwrap().1, "abc");
-    assert!(literal_c2s("{4+}\r\nabc").is_err());
+    assert_parse_success!(literal_c2s, "{3+}\r\nabc", "abc".into());
+    assert_parse_incomplete!(literal_c2s, "{4+}\r\nabc", Needed::Unknown);
 }
 
 fn sievestring_c2s(input: Input) -> ParseResult<String> {
@@ -206,85 +246,84 @@ fn sievestring_c2s(input: Input) -> ParseResult<String> {
 
 #[test]
 fn test_sievestring_c2s() {
-    assert_eq!(sievestring_c2s("{3+}\r\nabc").unwrap().1, "abc");
-    assert_eq!(sievestring_c2s("\"hello\"").unwrap().1, "hello");
+    assert_parse_success!(sievestring_c2s, "{3+}\r\nabc", "abc".into());
+    assert_parse_success!(sievestring_c2s, "\"hello\"", "hello".into());
+    assert_parse_error!(sievestring_c2s, "{a3+}\r\nabc");
 }
 
 fn code(input: Input) -> ParseResult<(ResponseCode, Option<String>)> {
-    delimited(tag("("), (atom, opt(preceded(space1, sievestring_s2c))), tag(")")).parse_next(input)
+    delimited("(", (atom, opt(preceded(space1, sievestring_s2c))), ")").parse_next(input)
 }
 
 #[test]
 fn test_code() {
-    assert!(matches!(
-        code("(QUOTA)"),
-        Ok(("", (ResponseCode::Quota(QuotaVariant::None), None)))
-    ));
-    assert_eq!(
-        code("(TAG {16}\r\nSTARTTLS-SYNC-42)").unwrap(),
-        ("", (ResponseCode::Tag, Some("STARTTLS-SYNC-42".to_string())))
+    assert_parse_success!(code, "(QUOTA)", (ResponseCode::Quota(QuotaVariant::None), None));
+    assert_parse_success!(
+        code,
+        "(TAG {16}\r\nSTARTTLS-SYNC-42)",
+        (ResponseCode::Tag, Some("STARTTLS-SYNC-42".to_string()))
     );
-    assert_eq!(
-        code("(TAG \"STARTTLS-SYNC-42\")").unwrap(),
-        ("", (ResponseCode::Tag, Some("STARTTLS-SYNC-42".to_string())))
+    assert_parse_success!(
+        code,
+        "(TAG \"STARTTLS-SYNC-42\")",
+        (ResponseCode::Tag, Some("STARTTLS-SYNC-42".to_string()))
     );
 }
 
 fn quoted_string(input: Input) -> ParseResult<String> {
     delimited(
-        tag("\""),
+        "\"",
         escaped_transform(
-            // TODO
-            alpha0,
+            take_while(0.., |c| c != '\\' && c != '"'),
             '\\',
-            alt((
-                tag("\\").value("\\"),
-                tag("\"").value("\""),
-            ))
+            alt(("\\".value("\\"), "\"".value("\""))),
         ),
-        tag("\"")
-    ).parse_next(input)
+        "\"",
+    )
+    .parse_next(input)
 }
 
 #[test]
 fn test_quoted_string() {
-    quoted_string("\"hello\"").unwrap();
-    quoted_string("\"\"").unwrap();
-    assert!(quoted_string("hello").is_err());
+    assert_parse_success!(quoted_string, "\"STARTTLSSYNC-42\"", "STARTTLSSYNC-42".into(), "");
+    assert_parse_success!(quoted_string, "\"\"", "".into(), "");
+    assert_parse_error!(quoted_string, "hello");
 }
 
-pub fn sieve_name_c2s(input: Input) -> ParseResult<String> {
-    match sievestring_c2s(input) {
-        Err(e) => Err(e),
-        Ok((rest, s)) => match s.chars().find(|c| is_bad_sieve_name_char(*c)) {
-            Some(_) => Err(winnow::error::ErrMode::Cut(ParseError::from_error_kind(input, ErrorKind::Tag))),
-            None => Ok((rest, s)),
-        },
-    }
-}
+// pub fn sieve_name_c2s(input: Input) -> ParseResult<String> {
+//     sievestring_c2s
+//         .try_map(|s| {
+//             s.chars()
+//                 .any(is_bad_sieve_name_char)
+//                 .not()
+//                 .then_some(s)
+//                 .ok_or(u64::from_str("a").unwrap_err())
+//         })
+//         .parse_next(input)
+// }
+//
+// #[test]
+// fn test_sieve_name_c2s() {
+//     assert_parse_success!(sieve_name_c2s, "\"hello\"", "hello".into());
+//     assert_parse_success!(sieve_name_c2s, "\"hello\u{1337}\"", "hello\u{1337}".into());
+//     assert_parse_success!(sieve_name_c2s, "{3+}\r\nabc", "abc".into());
+//     assert_parse_success!(sieve_name_c2s, "\"he\" \x1f", "he".into(), " \x1f");
+//     assert_parse_error!(sieve_name_c2s, "\"he\x1f\"");
+// }
 
-#[test]
-fn test_sieve_name_c2s() {
-    sieve_name_c2s("\"hello\"").unwrap();
-    sieve_name_c2s("\"hello\u{1337}\"").unwrap();
-    sieve_name_c2s("{3}\r\nabc").unwrap();
-    assert!(matches!(sieve_name_c2s("\"he\x1f\""), Err(winnow::error::ErrMode::Cut(_))));
-    assert!(matches!(sieve_name_c2s("\"he\" \x1f"), Ok((" \x1f", _))));
-}
-
-pub fn active_sieve_name(input: Input) -> ParseResult<Option<String>> {
-    opt(sieve_name_c2s).parse_next(input)
-}
-
-#[test]
-fn test_active_sieve_name() {
-    assert!(active_sieve_name("hello  ").unwrap().1.is_none());
-    assert!(active_sieve_name("\"hello \" ").unwrap().1.is_some());
-    assert!(active_sieve_name("\"hello\x7f \" ").is_err());
-    assert!(active_sieve_name("\"\"").is_ok());
-    assert!(matches!(active_sieve_name("hello   "), Ok(("hello   ", None))));
-    assert!(matches!(active_sieve_name("   "), Ok((_, None))));
-}
+// pub fn active_sieve_name(input: Input) -> ParseResult<Option<String>> {
+//     opt(sieve_name_c2s).parse_next(input)
+// }
+//
+// #[test]
+// fn test_active_sieve_name() {
+//     assert!(active_sieve_name("hello  ").unwrap().1.is_none());
+//     assert!(active_sieve_name("\"hello \" ").unwrap().1.is_some());
+//     assert!(active_sieve_name("\"hello\x7f \" ").is_err());
+//     assert!(active_sieve_name("\"\"").is_ok());
+//     assert!(matches!(active_sieve_name("hello   "), Ok(("hello   ", None))));
+//     assert!(matches!(active_sieve_name("   "), Ok((_, None))));
+// }
 
 pub fn response_ok(input: Input) -> ParseResult<Response> {
     terminated(
@@ -296,12 +335,13 @@ pub fn response_ok(input: Input) -> ParseResult<Response> {
             },
         ),
         crlf,
-    ).parse_next(input)
+    )
+    .parse_next(input)
 }
 
 pub fn response_nobye(input: Input) -> ParseResult<Response> {
     terminated(
-        ((nobye, opt(preceded(space1, code)), opt(preceded(space1, quoted_string)))).map(
+        (nobye, opt(preceded(space1, code)), opt(preceded(space1, quoted_string))).map(
             |(oknobye, code, human)| Response {
                 tag: oknobye,
                 code,
@@ -309,7 +349,8 @@ pub fn response_nobye(input: Input) -> ParseResult<Response> {
             },
         ),
         crlf,
-    ).parse_next(input)
+    )
+    .parse_next(input)
 }
 
 pub fn response_oknobye(input: Input) -> ParseResult<Response> {
@@ -318,69 +359,100 @@ pub fn response_oknobye(input: Input) -> ParseResult<Response> {
 
 #[test]
 fn test_response() {
-    response_oknobye("ok\r\n").unwrap();
-    response_oknobye("nO\r\n").unwrap();
-    response_oknobye("BYE\r\n").unwrap();
-    response_oknobye("ok (QUOTA)\r\n").unwrap();
-    response_oknobye("ok (QUOTA) \"hello\"\r\n").unwrap();
-    assert!(matches!(response_oknobye("ok"), Err(_)));
-    assert!(matches!(response_oknobye(" ok\r\n"), Err(_)));
-    assert!(matches!(response_oknobye("ok (\r\n"), Err(_)));
-    assert!(matches!(response_oknobye("ok (QUOTA\r\n"), Err(_)));
-    assert!(matches!(response_oknobye("ok (QUOTA/)\r\n"), Err(_)));
+    assert_parse_success!(response_oknobye, "ok\r\n");
+    assert_parse_success!(response_oknobye, "nO\r\n");
+    assert_parse_success!(response_oknobye, "BYE\r\n");
+    assert_parse_success!(response_oknobye, "ok (QUOTA)\r\n");
+    assert_parse_success!(response_oknobye, "ok (QUOTA) \"hello\"\r\n");
+    assert_parse_incomplete!(response_oknobye, "ok", 1);
+    assert_parse_error!(response_oknobye, " ok\r\n");
+    assert_parse_error!(response_oknobye, "ok (\r\n");
+    assert_parse_error!(response_oknobye, "ok (QUOTA\r\n");
+    assert_parse_error!(response_oknobye, "ok (QUOTA/)\r\n");
 }
 
 pub fn response_getscript(input: Input) -> ParseResult<(Option<String>, Response)> {
     alt((
         separated_pair(sievestring_s2c, crlf, response_ok).map(|(s, r)| (Some(s), r)),
         response_nobye.map(|r| (None, r)),
-    )).parse_next(input)
+    ))
+    .parse_next(input)
 }
 
 #[test]
 fn test_response_getscript() {
-    response_getscript("\"hello\"\r\nOK\r\n").unwrap();
-    response_getscript("NO\r\n").unwrap();
-    assert!(matches!(response_getscript("\"hello\"\r\nBYE\r\n"), Err(_)));
+    assert_parse_success!(response_getscript, "\"hello\"\r\nOK\r\n");
+    assert_parse_success!(response_getscript, "NO\r\n");
+    assert_parse_error!(response_getscript, "\"hello\"\r\nBYE\r\n");
 }
 
 pub fn response_listscripts(input: Input) -> ParseResult<(Vec<(String, bool)>, Response)> {
     (
-        repeat(0.., terminated(
-            (sievestring_s2c, opt((space1, tag_no_case("ACTIVE"))).map(|o| o.is_some())),
-            crlf,
-        )),
+        repeat(
+            0..,
+            terminated(
+                (sievestring_s2c, opt((space1, Caseless("ACTIVE"))).map(|o| o.is_some())),
+                crlf,
+            ),
+        ),
         response_oknobye,
-    ).parse_next(input)
+    )
+        .parse_next(input)
 }
 
 #[test]
 fn test_response_listscripts() {
-    response_listscripts("\"script1\"\r\n\"script2\"\r\nOK\r\n").unwrap();
-    response_listscripts("\"script1\" ACTIVE\r\n\"script2\"\r\nOK\r\n").unwrap();
-    response_listscripts("\"script1\" active\r\n\"script2\"\r\nOK\r\n").unwrap();
-    response_listscripts("OK\r\n").unwrap();
-    response_listscripts("BYE\r\n").unwrap();
+    assert_parse_success!(
+        response_listscripts,
+        "\"script1\"\r\n\"script2\"\r\nOK\r\n",
+        (
+            vec![("script1".into(), false), ("script2".into(), false),],
+            Response::new(OkNoBye::Ok)
+        )
+    );
+    assert_parse_success!(
+        response_listscripts,
+        "\"script1\" ACTIVE\r\n\"script2\"\r\nOK\r\n",
+        (
+            vec![("script1".into(), true), ("script2".into(), false),],
+            Response::new(OkNoBye::Ok)
+        )
+    );
+    assert_parse_success!(
+        response_listscripts,
+        "\"script1\" active\r\n\"script2\"\r\nOK\r\n",
+        (
+            vec![("script1".into(), true), ("script2".into(), false),],
+            Response::new(OkNoBye::Ok)
+        )
+    );
+    assert_parse_success!(response_listscripts, "OK\r\n", (vec![], Response::new(OkNoBye::Ok)));
+    assert_parse_success!(response_listscripts, "BYE\r\n", (vec![], Response::new(OkNoBye::Bye)));
 }
 
 fn space_separated_string_s2c(input: Input) -> ParseResult<Vec<String>> {
-    sievestring_s2c.map(|s| {
-        if s.is_empty() {
-            vec![]
-        } else {
-            s.split(' ').map(String::from).collect()
-        }
-    }).parse_next(input)
+    sievestring_s2c
+        .map(|s| {
+            if s.is_empty() {
+                vec![]
+            } else {
+                s.split(' ').map(String::from).collect()
+            }
+        })
+        .parse_next(input)
 }
 
 fn space_separated_string_not_empty_s2c(input: Input) -> ParseResult<Vec<String>> {
-    sievestring_s2c.try_map(|s| {
-        if s.is_empty() {
-            Err("expected non-empty space-separated string, found empty string")
-        } else {
-            Ok(s.split(' ').map(String::from).collect())
-        }
-    }).parse_next(input)
+    sievestring_s2c
+        .try_map(|s| {
+            if s.is_empty() {
+                Err(u8::from_str("").unwrap_err())
+                // Err("expected non-empty space-separated string, found empty string")
+            } else {
+                Ok(s.split(' ').map(String::from).collect())
+            }
+        })
+        .parse_next(input)
 }
 
 fn number_string_s2c(input: Input) -> ParseResult<u64> {
@@ -389,63 +461,55 @@ fn number_string_s2c(input: Input) -> ParseResult<u64> {
 
 fn version(input: Input) -> ParseResult<Version> {
     delimited(
-        tag("\""),
-
-            separated_pair(
-                digit1.try_map(|s: &str| s.parse::<u64>()),
-                tag("."),
-                digit1.try_map(|s: &str| s.parse::<u64>()),
-            ).map(
-            |(major, minor)| Version { major, minor },
-        ),
-        tag("\""),
-    ).parse_next(input)
+        "\"",
+        separated_pair(
+            digit1.try_map(|s: &str| s.parse::<u64>()),
+            ".",
+            digit1.try_map(|s: &str| s.parse::<u64>()),
+        )
+        .map(|(major, minor)| Version { major, minor }),
+        "\"",
+    )
+    .parse_next(input)
 }
 
 fn single_capability(input: Input) -> ParseResult<Capability> {
     //TODO capability name as accept literal-s2c
     terminated(
         alt((
-            preceded(tag_no_case("\"IMPLEMENTATION\""), cut_err(preceded(space1, sievestring_s2c)))
+            preceded(Caseless("\"IMPLEMENTATION\""), cut_err(preceded(space1, sievestring_s2c)))
                 .map(Capability::Implementation),
-            preceded(
-                tag_no_case("\"SASL\""),
-                cut_err(preceded(space1, space_separated_string_s2c)),
-            )
+            preceded(Caseless("\"SASL\""), cut_err(preceded(space1, space_separated_string_s2c)))
                 .map(Capability::Sasl),
-            
+            preceded(Caseless("\"SIEVE\""), cut_err(preceded(space1, space_separated_string_s2c)))
+                .map(Capability::Sieve),
+            preceded(Caseless("\"MAXREDIRECTS\""), cut_err(preceded(space1, number_string_s2c)))
+                .map(Capability::MaxRedirects),
             preceded(
-                tag_no_case("\"SIEVE\""),
-                cut_err(preceded(space1, space_separated_string_s2c)),
-            ).map(Capability::Sieve),
-            preceded(
-                tag_no_case("\"MAXREDIRECTS\""),
-                cut_err(preceded(space1, number_string_s2c))
-            ).map(Capability::MaxRedirects),
-            preceded(
-                tag_no_case("\"NOTIFY\""),
+                Caseless("\"NOTIFY\""),
                 cut_err(preceded(space1, space_separated_string_not_empty_s2c)),
-            ).map(Capability::Notify),
-            tag_no_case("\"STARTTLS\"").value(Capability::StartTls),
-            preceded(
-                tag_no_case("\"LANGUAGE\""),
-                cut_err(preceded(space1, sievestring_s2c))
-            ).map(Capability::Language),
-            preceded(tag_no_case("\"VERSION\""), cut_err(preceded(space1, version))).map(Capability::Version),
-            preceded(tag_no_case("\"OWNER\""), cut_err(preceded(space1, sievestring_s2c))).map(Capability::Owner, ),
-            (sievestring_s2c, opt(preceded(space1, sievestring_s2c))).map( |(cap, arg)| {
-                Capability::Unknown(cap, arg)
-            }),
+            )
+            .map(Capability::Notify),
+            Caseless("\"STARTTLS\"").value(Capability::StartTls),
+            preceded(Caseless("\"LANGUAGE\""), cut_err(preceded(space1, sievestring_s2c)))
+                .map(Capability::Language),
+            preceded(Caseless("\"VERSION\""), cut_err(preceded(space1, version)))
+                .map(Capability::Version),
+            preceded(Caseless("\"OWNER\""), cut_err(preceded(space1, sievestring_s2c)))
+                .map(Capability::Owner),
+            (sievestring_s2c, opt(preceded(space1, sievestring_s2c)))
+                .map(|(cap, arg)| Capability::Unknown(cap, arg)),
         )),
         crlf,
-    ).parse_next(input)
+    )
+    .parse_next(input)
 }
 
 #[test]
 fn test_single_capability() {
-    single_capability("\"CAPABILITY1\"\r\n").unwrap();
-    single_capability("\"CAPABILITY2\" \"a b c d e\"\r\n").unwrap();
-    assert!(single_capability("\"CAPABILITY2\" \r\n").is_err());
+    assert_parse_success!(single_capability, "\"CAPABILITY1\"\r\n");
+    assert_parse_success!(single_capability, "\"CAPABILITY2\" \"a b c d e\"\r\n");
+    assert_parse_error!(single_capability, "\"CAPABILITY2\" \r\n");
 }
 
 pub fn response_capabilities(input: Input) -> ParseResult<(Vec<Capability>, Response)> {
@@ -504,13 +568,14 @@ pub fn response_starttls(input: Input) -> ParseResult<(Vec<Capability>, Response
     alt((
         preceded(response_ok, response_capabilities),
         response_nobye.map(|r| (Vec::new(), r)),
-    )).parse_next(input)
+    ))
+    .parse_next(input)
 }
 
 #[test]
 fn test_response_starttls() {
-    response_starttls("OK\r\n\"CAPABILITY1\"\r\n\"CAPABILITY2\"\r\nOK\r\n").unwrap();
-    response_starttls("BYE\r\n").unwrap();
+    assert_parse_success!(response_starttls, "OK\r\n\"CAPABILITY1\"\r\n\"CAPABILITY2\"\r\nOK\r\n");
+    assert_parse_success!(response_starttls, "BYE\r\n");
 }
 
 /// Server responds to authenticate with either a challenge or a oknobye
@@ -519,13 +584,14 @@ pub fn response_authenticate_initial(input: Input) -> ParseResult<Either<String,
     alt((
         terminated(sievestring_s2c, crlf).map(|s| Either::Left(s)),
         response_nobye.map(|r| Either::Right(r)),
-    )).parse_next(input)
+    ))
+    .parse_next(input)
 }
 
 #[test]
 fn test_response_authenticate_initial() {
-    response_authenticate_initial("{4}\r\nabcd\r\n").unwrap();
-    response_authenticate_initial("BYE\r\n").unwrap();
+    assert_parse_success!(response_authenticate_initial, "{4}\r\nabcd\r\n");
+    assert_parse_success!(response_authenticate_initial, "BYE\r\n");
 }
 
 /// Server responds to client response with oknobye and can also include new
@@ -539,11 +605,15 @@ pub fn response_authenticate_complete(
             Some((s, r)) => (Some(s), r),
         }),
         response_nobye.map(|r| (None, r)),
-    )).parse_next(input)
+    ))
+    .parse_next(input)
 }
 
 #[test]
 fn test_response_authenticate_complete() {
-    response_authenticate_complete("OK\r\n\"CAPABILITY1\"\r\n\"CAPABILITY2\"\r\nOK\r\n").unwrap();
-    response_authenticate_complete("BYE\r\n").unwrap();
+    assert_parse_success!(
+        response_authenticate_complete,
+        "OK\r\n\"CAPABILITY1\"\r\n\"CAPABILITY2\"\r\nOK\r\n"
+    );
+    assert_parse_success!(response_authenticate_complete, "BYE\r\n");
 }

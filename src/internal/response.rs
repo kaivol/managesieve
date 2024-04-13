@@ -33,12 +33,13 @@ fn response_helper<T, I>(
     parse: impl Fn(&str) -> ParseResult<I>,
     transform: impl Fn(I) -> Result<T, Error>,
 ) -> Option<Result<T, Error>> {
-    match parse(input) {
-        Ok((left, _)) if !left.is_empty() => Some(Err(Error::ResponseTooLong)),
-        Ok((_, response)) => Some(transform(response)),
-        Err(winnow::error::ErrMode::Incomplete(_)) => None,
-        _ => Some(Err(Error::InvalidResponse)),
-    }
+    // match parse(input) {
+    //     Ok((left, _)) if !left.is_empty() => Some(Err(Error::ResponseTooLong)),
+    //     Ok((_, response)) => Some(transform(response)),
+    //     Err(winnow::error::ErrMode::Incomplete(_)) => None,
+    //     _ => Some(Err(Error::InvalidResponse)),
+    // }
+    todo!()
 }
 
 fn verify_capabilities(
