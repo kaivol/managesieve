@@ -1,11 +1,11 @@
+#![allow(dead_code)]
+
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq)]
-pub enum Error {
-    IncompleteResponse,
-    InvalidResponse,
-    InvalidInput,
-}
+use snafu::Snafu;
+
+#[derive(Snafu, Debug, PartialEq)]
+pub struct IllegalScriptName;
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -13,7 +13,7 @@ pub enum Command {
     StartTls,
     Logout,
     Capability,
-    HaveSpace(String, usize),
+    HaveSpace(String, u64),
     PutScript(String, String),
     ListScripts,
     SetActive(String),
@@ -41,11 +41,11 @@ impl Command {
         Command::Capability
     }
 
-    pub fn have_space(name: &str, size: usize) -> Result<Command, Error> {
+    pub fn have_space(name: &str, size: u64) -> Result<Command, IllegalScriptName> {
         Ok(Command::HaveSpace(to_sieve_name(name)?, size))
     }
 
-    pub fn put_script(name: &str, script: &str) -> Result<Command, Error> {
+    pub fn put_script(name: &str, script: &str) -> Result<Command, IllegalScriptName> {
         Ok(Command::PutScript(to_sieve_name(name)?, script.to_owned()))
     }
 
@@ -53,19 +53,19 @@ impl Command {
         Command::ListScripts
     }
 
-    pub fn set_active(name: &str) -> Result<Command, Error> {
+    pub fn set_active(name: &str) -> Result<Command, IllegalScriptName> {
         Ok(Command::SetActive(to_sieve_name(name)?))
     }
 
-    pub fn deletescript(name: &str) -> Result<Command, Error> {
+    pub fn deletescript(name: &str) -> Result<Command, IllegalScriptName> {
         Ok(Command::DeleteScript(to_sieve_name(name)?))
     }
 
-    pub fn renamescript(name: &str) -> Result<Command, Error> {
+    pub fn renamescript(name: &str) -> Result<Command, IllegalScriptName> {
         Ok(Command::RenameScript(to_sieve_name(name)?))
     }
 
-    pub fn checkscript(name: &str) -> Result<Command, Error> {
+    pub fn checkscript(name: &str) -> Result<Command, IllegalScriptName> {
         Ok(Command::CheckScript(to_sieve_name(name)?))
     }
 
@@ -78,21 +78,12 @@ impl Command {
     }
 }
 
-fn to_sieve_name(s: &str) -> Result<String, Error> {
-    if s.chars()
-        .find(|c| crate::internal::parser::is_bad_sieve_name_char(*c))
-        .is_some()
-    {
-        return Err(Error::InvalidInput);
+fn to_sieve_name(s: &str) -> Result<String, IllegalScriptName> {
+    if s.chars().any(crate::internal::parser::is_bad_sieve_name_char) {
+        return Err(IllegalScriptName);
     }
 
     Ok(s.to_owned())
-}
-
-// to quotedstring
-fn to_qs(s: &str) -> String {
-    // TODO: escape some things in s?
-    format!("\"{}\"", s)
 }
 
 fn to_lit_c2s(s: &str) -> String {
@@ -106,15 +97,17 @@ impl Display for Command {
             Command::StartTls => "STARTTLS\r\n".into(),
             Command::Logout => "LOGOUT\r\n".into(),
             Command::Capability => "CAPABILITY\r\n".into(),
-            Command::HaveSpace(name, size) => format!("HAVESPACE {} {}\r\n", to_qs(name), size),
+            Command::HaveSpace(name, size) => {
+                format!("HAVESPACE {} {}\r\n", to_lit_c2s(name), size)
+            }
             Command::PutScript(name, script) => {
-                format!("PUTSCRIPT {} {}\r\n", to_qs(name), to_lit_c2s(script))
+                format!("PUTSCRIPT {} {}\r\n", to_lit_c2s(name), to_lit_c2s(script))
             }
             Command::ListScripts => "LISTSCRIPTS\r\n".into(),
-            Command::SetActive(name) => format!("SETACTIVE {}\r\n", to_qs(name)),
-            Command::DeleteScript(name) => format!("DELETESCRIPT {}\r\n", to_qs(name)),
-            Command::RenameScript(name) => format!("RENAMESCRIPT {}\r\n", to_qs(name)),
-            Command::CheckScript(name) => format!("CHECKSCRIPT {}\r\n", to_qs(name)),
+            Command::SetActive(name) => format!("SETACTIVE {}\r\n", to_lit_c2s(name)),
+            Command::DeleteScript(name) => format!("DELETESCRIPT {}\r\n", to_lit_c2s(name)),
+            Command::RenameScript(name) => format!("RENAMESCRIPT {}\r\n", to_lit_c2s(name)),
+            Command::CheckScript(name) => format!("CHECKSCRIPT {}\r\n", to_lit_c2s(name)),
             Command::Noop => "NOOP\r\n".into(),
             Command::UnAuthenticate => "UNAUTHENTICATE\r\n".into(),
         };

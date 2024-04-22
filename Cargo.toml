@@ -17,6 +17,9 @@ winnow = "0.6.6"
 either = "1.6.1"
 
 http-auth-basic = "0.3.3"
+futures-rustls = { version = "0.26.0", default-features = false, features = ["ring"] }
+webpki-roots = "0.26.1"
+webpki = "0.22.4"
 
 [dev-dependencies]
 clap = { version = "4.5.4", features = [

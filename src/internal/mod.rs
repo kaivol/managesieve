@@ -18,5 +18,5 @@
 //! response.
 
 pub(crate) mod command;
- mod parser;
+pub(crate) mod parser;
 pub(crate) mod response;
