@@ -1,4 +1,6 @@
+pub mod authenticate;
+pub mod connect;
 pub mod have_space;
-mod logout;
-mod connect;
-mod start_tls;
+pub mod list_scripts;
+pub mod logout;
+pub mod start_tls;

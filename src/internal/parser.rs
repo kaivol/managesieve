@@ -208,21 +208,21 @@ fn literal_s2c(input: Input) -> ParseResult<String> {
     length_take(literal_s2c_len).map(ToOwned::to_owned).parse_next(input)
 }
 
-fn sievestring_s2c(input: Input) -> ParseResult<String> {
+pub fn sievestring_s2c(input: Input) -> ParseResult<String> {
     alt((literal_s2c, quoted_string)).parse_next(input)
 }
 
-fn literal_c2s_len(input: Input) -> ParseResult<u64> {
-    terminated(delimited("{", digit1.parse_to(), "+}"), crlf).parse_next(input)
-}
+// fn literal_c2s_len(input: Input) -> ParseResult<u64> {
+//     terminated(delimited("{", digit1.parse_to(), "+}"), crlf).parse_next(input)
+// }
 
-fn literal_c2s(input: Input) -> ParseResult<String> {
-    length_take(literal_c2s_len).map(ToOwned::to_owned).parse_next(input)
-}
+// fn literal_c2s(input: Input) -> ParseResult<String> {
+//     length_take(literal_c2s_len).map(ToOwned::to_owned).parse_next(input)
+// }
 
-fn sievestring_c2s(input: Input) -> ParseResult<String> {
-    alt((literal_c2s, quoted_string)).parse_next(input)
-}
+// fn sievestring_c2s(input: Input) -> ParseResult<String> {
+//     alt((literal_c2s, quoted_string)).parse_next(input)
+// }
 
 fn extension_data(input: Input) -> ParseResult<Vec<ExtensionItem>> {
     separated(1.., extension_item, space1).parse_next(input)

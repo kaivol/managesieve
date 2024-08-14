@@ -1,15 +1,15 @@
 use core::str;
-use std::collections::HashMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite};
-use snafu::{AsErrorSource, Snafu};
+use snafu::Snafu;
 
-use crate::client::{CapabilitiesError, Error, handle_bye, next_response, NoTls, Unauthenticated, UnexpectedNo, verify_capabilities};
-use crate::Connection;
-use crate::internal::parser::{
-    Response, response_capability, Tag, Version,
+use crate::client::{
+    handle_bye, next_response, verify_capabilities, CapabilitiesError, Error, NoTls,
+    Unauthenticated, UnexpectedNo,
 };
+use crate::internal::parser::{response_capability, Response, Tag};
+use crate::Connection;
 
 #[derive(Snafu, PartialEq, Debug)]
 pub enum ConnectError {
@@ -29,7 +29,8 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthent
             Tag::Ok(_) => Ok(Connection {
                 stream,
                 // TODO close connection or send LOGOUT when capabilities are invalid?
-                capabilities: verify_capabilities(capabilities).map_err(|source| ConnectError::InvalidCapabilities { source })?,
+                capabilities: verify_capabilities(capabilities)
+                    .map_err(|source| ConnectError::InvalidCapabilities { source })?,
                 _p: Default::default(),
             }),
             Tag::No(_) => Err(Error::from(ConnectError::from(UnexpectedNo { info }))),

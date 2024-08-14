@@ -12,13 +12,16 @@ use std::task::{ready, Poll};
 
 use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use futures_rustls::client::TlsStream;
-use snafu::{AsErrorSource, IntoError, ResultExt, Snafu};
+use snafu::{AsErrorSource, ResultExt, Snafu};
+use tracing::info;
 use winnow::combinator::{eof, terminated};
 use winnow::error::ErrMode;
 use winnow::{Parser, Partial};
 
 use crate::internal::command::Command;
-use crate::internal::parser::{response_capability, tag, Bye, Input, No, ParseResult, ReponseInfo, Response, Tag, Version, Capability};
+use crate::internal::parser::{
+    tag, Bye, Capability, Input, ParseResult, ReponseInfo, Response, Tag, Version,
+};
 
 pub trait Stream: AsyncRead + AsyncWrite + Unpin {}
 impl<T> Stream for T where T: AsyncRead + AsyncWrite + Unpin {}
@@ -84,7 +87,7 @@ pub struct Connection<STREAM: Stream + 'static, TLS: TlsMode, MODE: AuthMode> {
 #[derive(Debug, PartialEq)]
 pub struct Capabilities {
     pub implementation: String,
-    pub sasl: Option<Vec<String>>,
+    pub sasl: Vec<String>,
     pub sieve: Vec<String>,
     pub start_tls: bool,
     pub max_redirects: Option<u64>,
@@ -95,7 +98,9 @@ pub struct Capabilities {
     pub others: HashMap<String, Option<String>>,
 }
 
-pub(crate) fn verify_capabilities(capabilities: Vec<Capability>, ) -> Result<Capabilities, CapabilitiesError> {
+pub(crate) fn verify_capabilities(
+    capabilities: Vec<Capability>,
+) -> Result<Capabilities, CapabilitiesError> {
     let mut implementation: Option<String> = None;
     let mut sasl: Option<Vec<String>> = None;
     let mut sieve: Option<Vec<String>> = None;
@@ -139,7 +144,7 @@ pub(crate) fn verify_capabilities(capabilities: Vec<Capability>, ) -> Result<Cap
     if let (Some(implementation), Some(sieve), Some(version)) = (implementation, sieve, version) {
         Ok(Capabilities {
             implementation,
-            sasl,
+            sasl: sasl.unwrap_or_default(),
             sieve,
             start_tls: start_tls.is_some(),
             max_redirects,
@@ -170,16 +175,21 @@ impl<STREAM: Stream, TLS: TlsMode, AUTH: AuthMode> Debug for Connection<STREAM, 
 }
 
 impl<STREAM: Stream, TLS: TlsMode, AUTH: AuthMode> Connection<STREAM, TLS, AUTH> {
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
+    }
+
     pub(crate) async fn send_command<T: AsErrorSource + Display + Debug>(
         &mut self,
-        command: Command,
+        command: Command<'_>,
     ) -> Result<(), Error<T>> {
-        let command = command.to_string();
-        let res = self.stream.write_all(command.as_bytes()).await;
-        if res.is_err()  {
+        let message = command.to_string();
+        info!(command = message);
+        let res = self.stream.write_all(message.as_bytes()).await;
+        if res.is_err() {
             self.stream.close().await.context(IoSnafu)?;
         }
-        res.context(IoSnafu).into()
+        res.context(IoSnafu)
     }
 }
 

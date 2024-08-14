@@ -1,17 +1,18 @@
 use core::str;
-use std::fmt::{Debug};
+use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite};
-use snafu::{Snafu};
+use snafu::Snafu;
 
 use crate::client::{
-    Authenticated, handle_bye, next_response, RecoverableError, SieveResult, TlsMode,
+    handle_bye, next_response, Authenticated, RecoverableError, SieveResult, TlsMode, UnexpectedNo,
 };
-use crate::Connection;
 use crate::internal::command::{Command, IllegalScriptName};
-use crate::internal::parser::{QuotaVariant, ReponseInfo, Response, response_oknobye, Tag};
 use crate::internal::parser::ResponseCode::Quota;
+use crate::internal::parser::{response_oknobye, QuotaVariant, Response, Tag};
+use crate::Connection;
 
+#[derive(Debug)]
 pub enum HaveSpace {
     Yes,
     No(QuotaVariant, Option<String>),
@@ -20,12 +21,9 @@ pub enum HaveSpace {
 #[derive(Snafu, PartialEq, Debug)]
 pub enum HaveSpaceError {
     #[snafu(transparent)]
-    IllegalScriptName {
-        source: IllegalScriptName,
-    },
-    UnexpectedNoResponseCode {
-        info: ReponseInfo,
-    },
+    IllegalScriptName { source: IllegalScriptName },
+    #[snafu(transparent)]
+    UnexpectedNo { source: UnexpectedNo },
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
@@ -55,7 +53,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
                 _ => {
                     return Err(From::from(RecoverableError {
                         connection: self,
-                        source: HaveSpaceError::UnexpectedNoResponseCode { info },
+                        source: HaveSpaceError::from(UnexpectedNo { info }),
                     }))
                 }
             },
