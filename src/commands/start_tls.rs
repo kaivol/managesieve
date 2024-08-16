@@ -6,27 +6,21 @@ use futures::{AsyncRead, AsyncWrite};
 use futures_rustls::pki_types::ServerName;
 use futures_rustls::rustls::{ClientConfig, RootCertStore};
 use futures_rustls::TlsConnector;
-use snafu::{ResultExt, Snafu};
+use thiserror::{Error};
 
-use crate::client::{
-    handle_bye, next_response, verify_capabilities, CapabilitiesError, Error, IoSnafu, NoTls,
-    SieveResult, Tls, Unauthenticated, UnexpectedNo,
-};
+use crate::client::{handle_bye, next_response, verify_capabilities, CapabilitiesError, NoTls, SieveResult, Tls, Unauthenticated, UnexpectedNo, SieveError};
 use crate::internal::command::Command;
 use crate::internal::parser::{response_capability, response_ok, Response, Tag};
 use crate::Connection;
 
-#[derive(Snafu, PartialEq, Debug)]
+#[derive(Error, PartialEq, Debug)]
 pub enum StartTlsError {
+    #[error("STARTTLS is not supported")]
     Unsupported,
-    #[snafu(transparent)]
-    UnexpectedNo {
-        source: UnexpectedNo,
-    },
-    #[snafu(transparent)]
-    InvalidCapabilities {
-        source: CapabilitiesError,
-    },
+    #[error(transparent)]
+    UnexpectedNo(UnexpectedNo),
+    #[error(transparent)]
+    InvalidCapabilities(CapabilitiesError),
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthenticated> {
@@ -52,7 +46,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthent
             .with_no_client_auth();
         let config = TlsConnector::from(Arc::new(config));
 
-        let mut stream = config.connect(server_name, self.stream).await.context(IoSnafu)?;
+        let mut stream = config.connect(server_name, self.stream).await.map_err(SieveError::Io)?;
 
         let (capabilities, response) = next_response(&mut stream, response_capability).await?;
         let Response { tag, info } = handle_bye(&mut stream, response).await?;
@@ -62,10 +56,10 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthent
                 stream,
                 // TODO close connection or send LOGOUT when capabilities are invalid?
                 capabilities: verify_capabilities(capabilities)
-                    .map_err(|source| StartTlsError::InvalidCapabilities { source })?,
+                    .map_err(StartTlsError::InvalidCapabilities)?,
                 _p: Default::default(),
             }),
-            Tag::No(_) => Err(Error::from(StartTlsError::from(UnexpectedNo { info }))),
+            Tag::No(_) => Err(SieveError::from(StartTlsError::UnexpectedNo(UnexpectedNo { info }))),
         }
     }
 }

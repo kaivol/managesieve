@@ -1,9 +1,8 @@
 use core::str;
 use std::fmt::Debug;
-
 use futures::{AsyncRead, AsyncWrite};
 use sasl::client::Mechanism;
-use snafu::Snafu;
+use thiserror::Error;
 
 use crate::client::{
     handle_bye, next_response, verify_capabilities, Authenticated, CapabilitiesError, SieveResult,
@@ -11,23 +10,44 @@ use crate::client::{
 };
 use crate::internal::command::Command;
 use crate::internal::parser::{response_capability, response_oknobye, Response, ResponseCode, Tag};
-use crate::Connection;
+use crate::{bail, Connection};
 
-#[derive(Snafu, PartialEq, Debug)]
+#[derive(Error, PartialEq, Debug)]
 pub enum AuthenticateError {
+    #[error("server does not support `PLAIN` authentication")]
     Unsupported,
+    #[error("authentication failed with error code `{code:?}`{}{}",
+        if .reason.is_some() { ". Reason: " } else { "" },
+        match .reason {
+            Some(s) => s.as_str(),
+            None => "",
+        }
+    )]
     AuthenticationFailed {
         code: AuthenticationErrorCode,
         reason: Option<String>,
     },
-    #[snafu(transparent)]
-    UnexpectedNo {
-        source: UnexpectedNo,
-    },
-    #[snafu(transparent)]
-    InvalidCapabilities {
-        source: CapabilitiesError,
-    },
+    #[error(transparent)]
+    UnexpectedNo(UnexpectedNo),
+    #[error(transparent)]
+    InvalidCapabilities(CapabilitiesError),
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn auth_failed() {
+        let error = AuthenticateError::AuthenticationFailed {
+            code: AuthenticationErrorCode::EncryptNeeded,
+            reason: Some("Shit happens".into()),
+        };
+        assert_eq!(
+            error.to_string(),
+            "authentication failed with error code `EncryptNeeded`. Reason: Shit happens",
+        );
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -49,7 +69,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
     ) -> SieveResult<Connection<STREAM, TLS, Authenticated>, AuthenticateError> {
         // Abort immediately if the server does not support STARTTLS
         if !self.capabilities.sasl.iter().any(|sasl| sasl.as_str() == "PLAIN") {
-            return Err(AuthenticateError::Unsupported.into());
+            bail!(AuthenticateError::Unsupported);
         }
 
         let mut plain = sasl::client::mechanisms::Plain::new(username, password);
@@ -82,7 +102,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
                 next_response(&mut self.stream, response_capability).await?;
             let Response { tag, info } = handle_bye(&mut self.stream, response).await?;
             if matches!(tag, Tag::No(_)) {
-                return Err(AuthenticateError::from(UnexpectedNo { info }).into());
+                bail!(AuthenticateError::UnexpectedNo(UnexpectedNo { info }));
             }
             verify_capabilities(capabilities).unwrap()
         };

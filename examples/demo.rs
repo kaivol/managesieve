@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use std::error::{Error};
 use std::pin::{pin, Pin};
 use std::task::{Context, Poll};
 
@@ -7,9 +8,9 @@ use clap::{arg, Parser};
 use futures::{pin_mut, AsyncRead, AsyncWrite};
 use futures_rustls::pki_types::ServerName;
 use managesieve::commands::have_space::HaveSpaceError;
-use managesieve::{Connection, Error, RecoverableError};
+use managesieve::{Connection, SieveError, RecoverableError};
 use tokio::net::TcpStream;
-use tokio_util::compat::TokioAsyncReadCompatExt;
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 use tracing::Level;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -47,8 +48,15 @@ pub async fn main() -> eyre::Result<()> {
     let (sieve, scripts) = sieve.list_scripts().await?;
     println!("result={:#?}", scripts);
 
-    let (sieve, have_space) = sieve.have_space("foo", 2 * 1024 * 1024).await?;
+    let (sieve, have_space) = sieve.have_space("foo", 1024 * 1024).await?;
     println!("{have_space:#?}");
+
+    let res = sieve.have_space("foo", 2 * 1024 * 1024).await;
+    let sieve = match res {
+        Ok((sieve, space)) => sieve,
+        Err(SieveError::Other(RecoverableError { source, connection: sieve })) => sieve,
+        Err(e) => return Err(e.into())
+    };
 
     sieve.logout().await?;
 

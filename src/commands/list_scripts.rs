@@ -2,7 +2,7 @@ use core::str;
 use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite};
-use snafu::Snafu;
+use thiserror::Error;
 
 use crate::client::{
     handle_bye, next_response, Authenticated, RecoverableError, SieveResult, TlsMode, UnexpectedNo,
@@ -11,10 +11,10 @@ use crate::internal::command::Command;
 use crate::internal::parser::{response_listscripts, Response, Tag};
 use crate::Connection;
 
-#[derive(Snafu, PartialEq, Debug)]
+#[derive(Error, PartialEq, Debug)]
 pub enum ListScriptsError {
-    #[snafu(transparent)]
-    UnexpectedNo { source: UnexpectedNo },
+    #[error(transparent)]
+    UnexpectedNo(UnexpectedNo),
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
@@ -29,7 +29,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
         if matches!(tag, Tag::No(_)) {
             return Err(From::from(RecoverableError {
                 connection: self,
-                source: ListScriptsError::from(UnexpectedNo { info }),
+                source: ListScriptsError::UnexpectedNo(UnexpectedNo { info }),
             }));
         }
 

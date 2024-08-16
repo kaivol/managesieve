@@ -9,7 +9,8 @@ description = "Support for parsing ManageSieve protocol (RFC 5804)"
 [dependencies]
 futures = "0.3.30"
 
-snafu = "0.8.2"
+#snafu = "0.8.2"
+thiserror = "1.0.63"
 tracing = "0.1"
 
 winnow = "0.6.6"

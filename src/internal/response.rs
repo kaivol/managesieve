@@ -4,7 +4,7 @@
 // use std::collections::hash_map::Entry;
 // use std::collections::HashMap;
 //
-// use snafu::Snafu;
+// use thiserror::Error;
 // use winnow::combinator::{eof, terminated};
 // use winnow::error::{ContextError, ErrMode};
 // use winnow::{Parser, Partial};

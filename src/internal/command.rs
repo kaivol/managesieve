@@ -3,9 +3,10 @@
 use std::fmt::{Display, Formatter};
 
 use base64::Engine;
-use snafu::Snafu;
+use thiserror::Error;
 
-#[derive(Snafu, Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq)]
+#[error("the given sieve script name is illegal")]
 pub struct IllegalScriptName;
 
 #[derive(Debug, PartialEq)]
