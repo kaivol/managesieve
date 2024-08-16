@@ -1,62 +1,35 @@
-use core::str;
+use std::convert::Infallible;
 use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite};
-use thiserror::Error;
 
-use crate::client::{
-    handle_bye, next_response, Authenticated, RecoverableError, SieveResult, TlsMode, UnexpectedNo,
-};
-use crate::internal::command::{Command, IllegalScriptName};
-use crate::internal::parser::ResponseCode::Quota;
-use crate::internal::parser::{response_oknobye, QuotaVariant, Response, Tag};
-use crate::{bail, Connection};
+use crate::client::{handle_bye, next_response, Authenticated, TlsMode};
+use crate::commands::errors::SieveResult;
+use crate::commands::ScriptName;
+use crate::internal::command::Command;
+use crate::internal::parser::{response_oknobye, Response, ResponseCode, Tag};
+use crate::Connection;
 
 #[derive(Debug)]
 pub enum HaveSpace {
     Yes,
-    No(QuotaVariant, Option<String>),
-}
-
-#[derive(Error, PartialEq, Debug)]
-pub enum HaveSpaceError {
-    #[error(transparent)]
-    IllegalScriptName(IllegalScriptName),
-    #[error(transparent)]
-    UnexpectedNo(UnexpectedNo),
+    No(Option<ResponseCode>, Option<String>),
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
     pub async fn have_space(
         mut self,
-        name: &str,
+        name: &ScriptName,
         size: u64,
-    ) -> SieveResult<(Self, HaveSpace), RecoverableError<HaveSpaceError, Self>> {
-        let command = match Command::have_space(name, size) {
-            Ok(c) => c,
-            Err(e) => {
-                bail!(RecoverableError {
-                    connection: self,
-                    source: HaveSpaceError::IllegalScriptName(e),
-                })
-            }
-        };
-        self.send_command(command).await?;
+    ) -> SieveResult<(Self, HaveSpace), Infallible> {
+        self.send_command(Command::have_space(name, size)).await?;
 
         let response = next_response(&mut self.stream, response_oknobye).await?;
         let Response { tag, info } = handle_bye(&mut self.stream, response).await?;
 
         let res = match tag {
             Tag::Ok(_) => HaveSpace::Yes,
-            Tag::No(_) => match info.code {
-                Some(Quota(q)) => HaveSpace::No(q, info.human),
-                _ => {
-                    bail!(RecoverableError {
-                        connection: self,
-                        source: HaveSpaceError::UnexpectedNo(UnexpectedNo { info }),
-                    })
-                }
-            },
+            Tag::No(_) => HaveSpace::No(info.code, info.human),
         };
 
         Ok((self, res))

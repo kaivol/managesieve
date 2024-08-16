@@ -1,13 +1,12 @@
-use core::str;
 use std::fmt::Debug;
+
 use futures::{AsyncRead, AsyncWrite};
 use sasl::client::Mechanism;
 use thiserror::Error;
 
-use crate::client::{
-    handle_bye, next_response, verify_capabilities, Authenticated, CapabilitiesError, SieveResult,
-    TlsMode, Unauthenticated, UnexpectedNo,
-};
+use crate::client::{handle_bye, next_response, Authenticated, TlsMode, Unauthenticated};
+use crate::commands::errors::{CapabilitiesError, SieveResult, UnexpectedNo};
+use crate::commands::verify_capabilities;
 use crate::internal::command::Command;
 use crate::internal::parser::{response_capability, response_oknobye, Response, ResponseCode, Tag};
 use crate::{bail, Connection};
@@ -28,9 +27,9 @@ pub enum AuthenticateError {
         reason: Option<String>,
     },
     #[error(transparent)]
-    UnexpectedNo(UnexpectedNo),
+    UnexpectedNo(#[from] UnexpectedNo),
     #[error(transparent)]
-    InvalidCapabilities(CapabilitiesError),
+    InvalidCapabilities(#[from] CapabilitiesError),
 }
 
 #[cfg(test)]
@@ -59,6 +58,18 @@ pub enum AuthenticationErrorCode {
     Other(ResponseCode),
 }
 
+impl From<Option<ResponseCode>> for AuthenticationErrorCode {
+    fn from(code: Option<ResponseCode>) -> Self {
+        match code {
+            None => AuthenticationErrorCode::None,
+            Some(ResponseCode::AuthTooWeak) => AuthenticationErrorCode::AuthTooWeak,
+            Some(ResponseCode::EncryptNeeded) => AuthenticationErrorCode::EncryptNeeded,
+            Some(ResponseCode::TransitionNeeded) => AuthenticationErrorCode::TransitionNeeded,
+            Some(code) => AuthenticationErrorCode::Other(code),
+        }
+    }
+}
+
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
     Connection<STREAM, TLS, Unauthenticated>
 {
@@ -81,19 +92,10 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
         let Response { tag, info } = handle_bye(&mut self.stream, response).await?;
 
         if matches!(tag, Tag::No(_)) {
-            return Err(AuthenticateError::AuthenticationFailed {
-                code: match info.code {
-                    None => AuthenticationErrorCode::None,
-                    Some(ResponseCode::AuthTooWeak) => AuthenticationErrorCode::AuthTooWeak,
-                    Some(ResponseCode::EncryptNeeded) => AuthenticationErrorCode::EncryptNeeded,
-                    Some(ResponseCode::TransitionNeeded) => {
-                        AuthenticationErrorCode::TransitionNeeded
-                    }
-                    Some(code) => AuthenticationErrorCode::Other(code),
-                },
+            bail!(AuthenticateError::AuthenticationFailed {
+                code: info.code.into(),
                 reason: info.human,
-            }
-            .into());
+            });
         }
 
         let capabilities = {
@@ -104,7 +106,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
             if matches!(tag, Tag::No(_)) {
                 bail!(AuthenticateError::UnexpectedNo(UnexpectedNo { info }));
             }
-            verify_capabilities(capabilities).unwrap()
+            verify_capabilities(capabilities).map_err(AuthenticateError::InvalidCapabilities)?
         };
 
         Ok(Connection {

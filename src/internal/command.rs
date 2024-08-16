@@ -5,6 +5,8 @@ use std::fmt::{Display, Formatter};
 use base64::Engine;
 use thiserror::Error;
 
+use crate::commands::ScriptName;
+
 #[derive(Error, Debug, PartialEq)]
 #[error("the given sieve script name is illegal")]
 pub struct IllegalScriptName;
@@ -68,32 +70,32 @@ impl<'a> Command<'a> {
         Self::Capability
     }
 
-    pub fn have_space(name: &'a str, size: u64) -> Result<Self, IllegalScriptName> {
-        Ok(Self::HaveSpace(to_sieve_name(name)?, size))
+    pub fn have_space(name: &'a ScriptName, size: u64) -> Command<'a> {
+        Self::HaveSpace(SieveStr(name.as_ref()), size)
     }
 
-    pub fn put_script(name: &'a str, script: &'a str) -> Result<Self, IllegalScriptName> {
-        Ok(Self::PutScript(to_sieve_name(name)?, SieveStr(script)))
+    pub fn put_script(name: &'a ScriptName, script: &'a str) -> Command<'a> {
+        Self::PutScript(SieveStr(name.as_ref()), SieveStr(script))
     }
 
     pub fn list_scripts() -> Self {
         Self::ListScripts
     }
 
-    pub fn set_active(name: &'a str) -> Result<Self, IllegalScriptName> {
-        Ok(Self::SetActive(to_sieve_name(name)?))
+    pub fn set_active(name: &'a ScriptName) -> Command<'a> {
+        Self::SetActive(SieveStr(name.as_ref()))
     }
 
-    pub fn deletescript(name: &'a str) -> Result<Self, IllegalScriptName> {
-        Ok(Self::DeleteScript(to_sieve_name(name)?))
+    pub fn deletescript(name: &'a ScriptName) -> Command<'a> {
+        Self::DeleteScript(SieveStr(name.as_ref()))
     }
 
-    pub fn renamescript(name: &'a str) -> Result<Self, IllegalScriptName> {
-        Ok(Self::RenameScript(to_sieve_name(name)?))
+    pub fn renamescript(name: &'a ScriptName) -> Command<'a> {
+        Self::RenameScript(SieveStr(name.as_ref()))
     }
 
-    pub fn checkscript(name: &'a str) -> Result<Self, IllegalScriptName> {
-        Ok(Self::CheckScript(to_sieve_name(name)?))
+    pub fn checkscript(name: &'a ScriptName) -> Command<'a> {
+        Self::CheckScript(SieveStr(name.as_ref()))
     }
 
     pub fn noop() -> Self {
@@ -103,14 +105,6 @@ impl<'a> Command<'a> {
     pub fn unauthenticate() -> Self {
         Self::UnAuthenticate
     }
-}
-
-fn to_sieve_name(s: &str) -> Result<SieveStr, IllegalScriptName> {
-    if s.chars().any(crate::internal::parser::is_bad_sieve_name_char) {
-        return Err(IllegalScriptName);
-    }
-
-    Ok(SieveStr(s))
 }
 
 impl Display for Command<'_> {

@@ -1,4 +1,3 @@
-use core::str;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -6,9 +5,11 @@ use futures::{AsyncRead, AsyncWrite};
 use futures_rustls::pki_types::ServerName;
 use futures_rustls::rustls::{ClientConfig, RootCertStore};
 use futures_rustls::TlsConnector;
-use thiserror::{Error};
+use thiserror::Error;
 
-use crate::client::{handle_bye, next_response, verify_capabilities, CapabilitiesError, NoTls, SieveResult, Tls, Unauthenticated, UnexpectedNo, SieveError};
+use crate::client::{handle_bye, next_response, NoTls, Tls, Unauthenticated};
+use crate::commands::errors::{CapabilitiesError, SieveError, SieveResult, UnexpectedNo};
+use crate::commands::verify_capabilities;
 use crate::internal::command::Command;
 use crate::internal::parser::{response_capability, response_ok, Response, Tag};
 use crate::Connection;

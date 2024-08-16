@@ -1,19 +1,20 @@
-use core::str;
 use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite};
 use thiserror::Error;
 
-use crate::client::{handle_bye, next_response, verify_capabilities, CapabilitiesError, NoTls, Unauthenticated, UnexpectedNo, SieveError};
+use crate::client::{handle_bye, next_response, NoTls, Unauthenticated};
+use crate::commands::errors::{CapabilitiesError, SieveError, UnexpectedNo};
+use crate::commands::verify_capabilities;
 use crate::internal::parser::{response_capability, Response, Tag};
-use crate::Connection;
+use crate::{bail, Connection};
 
 #[derive(Error, PartialEq, Debug)]
 pub enum ConnectError {
     #[error(transparent)]
-    UnexpectedNo(UnexpectedNo),
+    UnexpectedNo(#[from] UnexpectedNo),
     #[error(transparent)]
-    InvalidCapabilities(CapabilitiesError),
+    InvalidCapabilities(#[from] CapabilitiesError),
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthenticated> {
@@ -27,10 +28,10 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthent
                 stream,
                 // TODO close connection or send LOGOUT when capabilities are invalid?
                 capabilities: verify_capabilities(capabilities)
-                    .map_err(|source| ConnectError::InvalidCapabilities(source))?,
+                    .map_err(ConnectError::InvalidCapabilities)?,
                 _p: Default::default(),
             }),
-            Tag::No(_) => Err(SieveError::from(ConnectError::UnexpectedNo(UnexpectedNo { info }))),
+            Tag::No(_) => bail!(ConnectError::UnexpectedNo(UnexpectedNo { info })),
         }
     }
 }
