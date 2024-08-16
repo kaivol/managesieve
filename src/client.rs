@@ -2,7 +2,6 @@ use core::str;
 use std::any::type_name;
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::error::Error;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
@@ -77,10 +76,7 @@ impl<STREAM: Stream, TLS: TlsMode, AUTH: AuthMode> Connection<STREAM, TLS, AUTH>
         &self.capabilities
     }
 
-    pub(crate) async fn send_command<T: Error>(
-        &mut self,
-        command: Command<'_>,
-    ) -> Result<(), SieveError<T>> {
+    pub(crate) async fn send_command(&mut self, command: Command<'_>) -> Result<(), SieveError> {
         let message = command.to_string();
         info!(command = message);
         let res = self.stream.write_all(message.as_bytes()).await;
@@ -91,15 +87,10 @@ impl<STREAM: Stream, TLS: TlsMode, AUTH: AuthMode> Connection<STREAM, TLS, AUTH>
     }
 }
 
-pub(crate) async fn handle_bye<
-    OK: tag::Ok,
-    NO: tag::No,
-    STREAM: AsyncRead + AsyncWrite + Unpin,
-    T: Error,
->(
+pub(crate) async fn handle_bye<OK: tag::Ok, NO: tag::No, STREAM: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut STREAM,
     Response { tag, info }: Response<OK, NO, Bye>,
-) -> Result<Response<OK, NO, Infallible>, SieveError<T>> {
+) -> Result<Response<OK, NO, Infallible>, SieveError> {
     match tag {
         Tag::Bye(_) => {
             stream.close().await.map_err(SieveError::Io)?;
@@ -116,14 +107,10 @@ pub(crate) async fn handle_bye<
     }
 }
 
-pub(crate) async fn next_response<
-    STREAM: AsyncRead + AsyncWrite + Unpin,
-    RES: 'static,
-    T: Error,
->(
+pub(crate) async fn next_response<STREAM: AsyncRead + AsyncWrite + Unpin, RES: 'static>(
     stream: &mut STREAM,
     parser: fn(Input) -> ParseResult<RES>,
-) -> Result<RES, SieveError<T>> {
+) -> Result<RES, SieveError> {
     let res = next_response_inner(stream, parser).await;
     if res.is_err() {
         stream.close().await.map_err(SieveError::Io)?;
@@ -131,18 +118,14 @@ pub(crate) async fn next_response<
     res
 }
 
-pub(crate) fn next_response_inner<
-    STREAM: AsyncRead + AsyncWrite + Unpin,
-    RES: 'static,
-    T: Error,
->(
+pub(crate) fn next_response_inner<STREAM: AsyncRead + AsyncWrite + Unpin, RES: 'static>(
     stream: &mut STREAM,
     parser: fn(Input) -> ParseResult<RES>,
-) -> impl Future<Output = Result<RES, SieveError<T>>> + '_ {
+) -> impl Future<Output = Result<RES, SieveError>> + '_ {
     let mut buf = String::new();
     let mut pin = Pin::new(stream);
 
-    std::future::poll_fn::<Result<RES, SieveError<T>>, _>(move |cx| loop {
+    std::future::poll_fn::<Result<RES, SieveError>, _>(move |cx| loop {
         let mut temp = [0u8; 1024];
         let read_count = ready!(pin.as_mut().poll_read(cx, &mut temp)).map_err(SieveError::Io)?;
 

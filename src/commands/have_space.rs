@@ -1,14 +1,12 @@
-use std::convert::Infallible;
 use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite};
 
 use crate::client::{handle_bye, next_response, Authenticated, TlsMode};
-use crate::commands::errors::SieveResult;
 use crate::commands::ScriptName;
 use crate::internal::command::Command;
 use crate::internal::parser::{response_oknobye, Response, ResponseCode, Tag};
-use crate::Connection;
+use crate::{Connection, SieveError};
 
 #[derive(Debug)]
 pub enum HaveSpace {
@@ -21,7 +19,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
         mut self,
         name: &ScriptName,
         size: u64,
-    ) -> SieveResult<(Self, HaveSpace), Infallible> {
+    ) -> Result<(Self, HaveSpace), SieveError> {
         self.send_command(Command::have_space(name, size)).await?;
 
         let response = next_response(&mut self.stream, response_oknobye).await?;

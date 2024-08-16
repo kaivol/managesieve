@@ -8,30 +8,32 @@ use futures_rustls::TlsConnector;
 use thiserror::Error;
 
 use crate::client::{handle_bye, next_response, NoTls, Tls, Unauthenticated};
-use crate::commands::errors::{CapabilitiesError, SieveError, SieveResult, UnexpectedNo};
+use crate::commands::errors::{CapabilitiesError, SieveError, UnexpectedNo};
 use crate::commands::verify_capabilities;
 use crate::internal::command::Command;
 use crate::internal::parser::{response_capability, response_ok, Response, Tag};
-use crate::Connection;
+use crate::{bail, Connection};
 
-#[derive(Error, PartialEq, Debug)]
+#[derive(Error, Debug)]
 pub enum StartTlsError {
     #[error("STARTTLS is not supported")]
     Unsupported,
     #[error(transparent)]
-    UnexpectedNo(UnexpectedNo),
+    UnexpectedNo(#[from] UnexpectedNo),
     #[error(transparent)]
-    InvalidCapabilities(CapabilitiesError),
+    InvalidCapabilities(#[from] CapabilitiesError),
+    #[error(transparent)]
+    Other(#[from] SieveError),
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthenticated> {
     pub async fn start_tls(
         mut self,
         server_name: ServerName<'static>,
-    ) -> SieveResult<Connection<STREAM, Tls, Unauthenticated>, StartTlsError> {
+    ) -> Result<Connection<STREAM, Tls, Unauthenticated>, StartTlsError> {
         // Abort immediately if the server does not support STARTTLS
         if !self.capabilities.start_tls {
-            return Err(StartTlsError::Unsupported.into());
+            return Err(StartTlsError::Unsupported);
         }
 
         self.send_command(Command::start_tls()).await?;
@@ -56,11 +58,10 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthent
             Tag::Ok(_) => Ok(Connection {
                 stream,
                 // TODO close connection or send LOGOUT when capabilities are invalid?
-                capabilities: verify_capabilities(capabilities)
-                    .map_err(StartTlsError::InvalidCapabilities)?,
+                capabilities: verify_capabilities(capabilities)?,
                 _p: Default::default(),
             }),
-            Tag::No(_) => Err(SieveError::from(StartTlsError::UnexpectedNo(UnexpectedNo { info }))),
+            Tag::No(_) => bail!(UnexpectedNo { info }),
         }
     }
 }

@@ -5,13 +5,13 @@ use sasl::client::Mechanism;
 use thiserror::Error;
 
 use crate::client::{handle_bye, next_response, Authenticated, TlsMode, Unauthenticated};
-use crate::commands::errors::{CapabilitiesError, SieveResult, UnexpectedNo};
+use crate::commands::errors::{CapabilitiesError, UnexpectedNo};
 use crate::commands::verify_capabilities;
 use crate::internal::command::Command;
 use crate::internal::parser::{response_capability, response_oknobye, Response, ResponseCode, Tag};
-use crate::{bail, Connection};
+use crate::{bail, Connection, SieveError};
 
-#[derive(Error, PartialEq, Debug)]
+#[derive(Error, Debug)]
 pub enum AuthenticateError {
     #[error("server does not support `PLAIN` authentication")]
     Unsupported,
@@ -30,6 +30,8 @@ pub enum AuthenticateError {
     UnexpectedNo(#[from] UnexpectedNo),
     #[error(transparent)]
     InvalidCapabilities(#[from] CapabilitiesError),
+    #[error(transparent)]
+    Other(#[from] SieveError),
 }
 
 #[cfg(test)]
@@ -77,7 +79,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
         mut self,
         username: impl Into<String>,
         password: impl Into<String>,
-    ) -> SieveResult<Connection<STREAM, TLS, Authenticated>, AuthenticateError> {
+    ) -> Result<Connection<STREAM, TLS, Authenticated>, AuthenticateError> {
         // Abort immediately if the server does not support STARTTLS
         if !self.capabilities.sasl.iter().any(|sasl| sasl.as_str() == "PLAIN") {
             bail!(AuthenticateError::Unsupported);

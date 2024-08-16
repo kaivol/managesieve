@@ -1,20 +1,24 @@
 use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use thiserror::Error;
 
 use crate::client::{handle_bye, next_response, AuthMode, TlsMode};
-use crate::commands::errors::{SieveError, SieveResult, UnexpectedNo};
+use crate::commands::errors::{SieveError, UnexpectedNo};
 use crate::internal::command::Command;
 use crate::internal::parser::{response_oknobye, Response, Tag};
 use crate::{bail, Connection};
-// #[derive(Error, PartialEq, Debug)]
-// pub enum LogoutError {
-//     #[error(transparent)]
-//     UnexpectedNo(UnexpectedNo),
-// }
+
+#[derive(Error, Debug)]
+pub enum LogoutError {
+    #[error(transparent)]
+    UnexpectedNo(#[from] UnexpectedNo),
+    #[error(transparent)]
+    Other(#[from] SieveError),
+}
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode, MODE: AuthMode>
     Connection<STREAM, TLS, MODE>
 {
-    pub async fn logout(mut self) -> SieveResult<(), UnexpectedNo> {
+    pub async fn logout(mut self) -> Result<(), LogoutError> {
         self.send_command(Command::logout()).await?;
 
         let response = next_response(&mut self.stream, response_oknobye).await?;

@@ -1,28 +1,19 @@
-use std::error::Error;
 use std::io;
 
 use thiserror::Error;
 
 use crate::internal::parser::ReponseInfo;
 
-pub type SieveResult<RES, ERROR> = Result<RES, SieveError<ERROR>>;
-
 #[derive(Error, Debug)]
-pub enum SieveError<I: Error> {
+pub enum SieveError {
     #[error("encountered I/0 error: {0}")]
     Io(#[source] io::Error),
     #[error("syntax error")]
     Syntax,
     #[error("received unexpected `BYE` response")]
     Bye { info: ReponseInfo },
-    // #[error("received unexpected `NO` response")]
-    // UnexpectedNo {
-    //     info: ReponseInfo,
-    // },
     #[error("server closed connection unexpectedly")]
     UnexpectedEof,
-    #[error(transparent)]
-    Other(#[from] I),
 }
 
 #[derive(Error, PartialEq, Debug)]
