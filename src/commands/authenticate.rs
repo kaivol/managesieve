@@ -51,7 +51,7 @@ mod test {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum AuthenticationErrorCode {
     None,
     AuthTooWeak,

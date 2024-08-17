@@ -5,6 +5,7 @@ use crate::internal::command::Command;
 use crate::internal::parser::{response_oknobye, QuotaVariant, Response, ResponseCode, Tag};
 use crate::{Connection, SieveError};
 
+#[derive(Debug)]
 pub enum PutScript {
     Ok {
         warnings: Option<String>,

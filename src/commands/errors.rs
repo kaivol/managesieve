@@ -16,13 +16,13 @@ pub enum SieveError {
     UnexpectedEof,
 }
 
-#[derive(Error, PartialEq, Debug)]
+#[derive(Error, Debug)]
 #[error("received unexpected NO response")]
 pub struct UnexpectedNo {
     pub info: ReponseInfo,
 }
 
-#[derive(Error, PartialEq, Debug)]
+#[derive(Error, Debug)]
 pub enum CapabilitiesError {
     #[error("capabilities response is missing required capability `IMPLEMENTATION`")]
     MissingImplementation,
