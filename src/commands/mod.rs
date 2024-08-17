@@ -11,6 +11,7 @@ use crate::internal::parser::{Capability, Version};
 pub mod authenticate;
 pub mod connect;
 pub mod errors;
+pub mod get_script;
 pub mod have_space;
 pub mod list_scripts;
 pub mod logout;
