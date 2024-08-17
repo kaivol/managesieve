@@ -8,6 +8,7 @@ use crate::internal::parser::{
     response_getscript, Response, ResponseCode,
 };
 use crate::{Connection, SieveError};
+use crate::commands::ScriptName;
 
 #[derive(Debug)]
 pub enum GetScript {
@@ -22,8 +23,8 @@ pub enum GetScript {
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
-    pub async fn get_scripts(mut self) -> Result<(Self, GetScript), SieveError> {
-        self.send_command(Command::list_scripts()).await?;
+    pub async fn get_script(mut self, name: &ScriptName) -> Result<(Self, GetScript), SieveError> {
+        self.send_command(Command::getscript(name)).await?;
 
         let response = next_response(&mut self.stream, response_getscript).await?;
 

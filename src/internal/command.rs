@@ -24,6 +24,7 @@ pub enum Command<'a> {
     PutScript(SieveStr<'a>, SieveStr<'a>),
     ListScripts,
     SetActive(SieveStr<'a>),
+    GetScript(SieveStr<'a>),
     DeleteScript(SieveStr<'a>),
     RenameScript(SieveStr<'a>),
     CheckScript(SieveStr<'a>),
@@ -86,6 +87,10 @@ impl<'a> Command<'a> {
         Self::SetActive(SieveStr(name.as_ref()))
     }
 
+    pub fn getscript(name: &'a ScriptName) -> Command<'a> {
+        Self::GetScript(SieveStr(name.as_ref()))
+    }
+
     pub fn deletescript(name: &'a ScriptName) -> Command<'a> {
         Self::DeleteScript(SieveStr(name.as_ref()))
     }
@@ -129,6 +134,7 @@ impl Display for Command<'_> {
             }
             Command::ListScripts => write!(f, "LISTSCRIPTS\r\n"),
             Command::SetActive(name) => write!(f, "SETACTIVE {name}\r\n"),
+            Command::GetScript(name) => write!(f, "GETSCRIPT {name}\r\n"),
             Command::DeleteScript(name) => write!(f, "DELETESCRIPT {name}\r\n"),
             Command::RenameScript(name) => write!(f, "RENAMESCRIPT {name}\r\n"),
             Command::CheckScript(name) => write!(f, "CHECKSCRIPT {name}\r\n"),

@@ -4,6 +4,7 @@ use crate::client::{handle_bye, next_response, Authenticated, TlsMode};
 use crate::internal::command::Command;
 use crate::internal::parser::{response_oknobye, QuotaVariant, Response, ResponseCode, Tag};
 use crate::{Connection, SieveError};
+use crate::commands::ScriptName;
 
 #[derive(Debug)]
 pub enum PutScript {
@@ -24,8 +25,8 @@ pub enum PutScript {
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
-    pub async fn put_scripts(mut self) -> Result<(Self, PutScript), SieveError> {
-        self.send_command(Command::list_scripts()).await?;
+    pub async fn put_scripts(mut self, name: &ScriptName, script: &str) -> Result<(Self, PutScript), SieveError> {
+        self.send_command(Command::put_script(name, script)).await?;
 
         let response = next_response(&mut self.stream, response_oknobye).await?;
         let Response { tag, info } = handle_bye(&mut self.stream, response).await?;

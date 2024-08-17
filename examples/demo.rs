@@ -9,6 +9,7 @@ use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 use tracing::Level;
 use tracing_subscriber::util::SubscriberInitExt;
+use managesieve::commands::get_script::GetScript;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -40,13 +41,19 @@ pub async fn main() -> eyre::Result<()> {
     let sieve = sieve.start_tls(ServerName::try_from(args.address)?).await?;
 
     let sieve = sieve.authenticate(args.username, args.password).await?;
+    println!("{:#?}", sieve.capabilities());
 
     let (sieve, scripts) = sieve.list_scripts().await?;
     println!("result={:#?}", scripts);
 
-    let script_foo = ScriptName::new("foo")?;
-    let (sieve, have_space) = sieve.have_space(script_foo, 1024 * 1024).await?;
-    println!("{have_space:#?}");
+    let script = &scripts.first().unwrap().0;
+    let (sieve, script) = sieve.get_script(ScriptName::new(script)?).await?;
+    let GetScript::Ok { script } = script else { panic!() };
+    // println!("=== SCRIPT ===\n{}", script);
+
+    // let script_foo = ScriptName::new("foo")?;
+    // let (sieve, have_space) = sieve.have_space(script_foo, 1024 * 1024).await?;
+    // println!("{have_space:#?}");
 
     // let res = sieve.have_space(script_foo, 2 * 1024 * 1024).await;
     // let sieve = match res {
