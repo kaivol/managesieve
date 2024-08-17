@@ -123,16 +123,6 @@ pub struct ReponseInfo {
     pub human: Option<String>,
 }
 
-// impl Response {
-//     pub const fn new(tag: OkNoBye) -> Response {
-//         Self {
-//             tag,
-//             code: None,
-//             human: None,
-//         }
-//     }
-// }
-
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Version {
     major: u64,
@@ -163,41 +153,9 @@ pub fn is_bad_sieve_name_char(c: char) -> bool {
     }
 }
 
-// pub(crate) fn ok(input: Input) -> ParseResult<Ok> {
-//     Caseless("OK").value(Ok).parse_next(input)
-// }
-
-// pub(crate) fn no(input: Input) -> ParseResult<OkNoBye> {
-//     Caseless("NO").value(OkNoBye::No).parse_next(input)
-// }
-//
-// pub(crate) fn bye(input: Input) -> ParseResult<OkNoBye> {
-//     Caseless("BYE").value(OkNoBye::Bye).parse_next(input)
-// }
-
 pub(crate) fn nobye(input: Input) -> ParseResult<Tag<Infallible, No, Bye>> {
     alt((Caseless("NO").value(Tag::no()), Caseless("BYE").value(Tag::bye()))).parse_next(input)
 }
-
-// fn atom(input: Input) -> ParseResult<ResponseCode> {
-//     alt((
-//         Caseless("AUTH-TOO-WEAK").value(ResponseCode::AuthTooWeak),
-//         Caseless("ENCRYPT-NEEDED").value(ResponseCode::EncryptNeeded),
-//         Caseless("QUOTA/MAXSCRIPTS").value(ResponseCode::Quota(QuotaVariant::MaxScripts)),
-//         Caseless("QUOTA/MAXSIZE").value(ResponseCode::Quota(QuotaVariant::MaxSize)),
-//         Caseless("QUOTA").value(ResponseCode::Quota(QuotaVariant::None)),
-//         Caseless("REFERRAL").value(ResponseCode::Referral(SieveUrl::new())),
-//         Caseless("SASL").value(ResponseCode::Sasl),
-//         Caseless("TRANSITION-NEEDED").value(ResponseCode::TransitionNeeded),
-//         Caseless("TRYLATER").value(ResponseCode::TryLater),
-//         Caseless("ACTIVE").value(ResponseCode::Active),
-//         Caseless("NONEXISTENT").value(ResponseCode::Nonexistent),
-//         Caseless("ALREADYEXISTS").value(ResponseCode::AlreadyExists),
-//         Caseless("TAG").value(ResponseCode::Tag),
-//         Caseless("WARNINGS").value(ResponseCode::Warnings),
-//     ))
-//     .parse_next(input)
-// }
 
 fn literal_s2c_len(input: Input) -> ParseResult<u64> {
     terminated(delimited("{", digit1.parse_to(), "}"), crlf).parse_next(input)
@@ -211,18 +169,6 @@ fn literal_s2c(input: Input) -> ParseResult<String> {
 pub fn sievestring_s2c(input: Input) -> ParseResult<String> {
     alt((literal_s2c, quoted_string)).parse_next(input)
 }
-
-// fn literal_c2s_len(input: Input) -> ParseResult<u64> {
-//     terminated(delimited("{", digit1.parse_to(), "+}"), crlf).parse_next(input)
-// }
-
-// fn literal_c2s(input: Input) -> ParseResult<String> {
-//     length_take(literal_c2s_len).map(ToOwned::to_owned).parse_next(input)
-// }
-
-// fn sievestring_c2s(input: Input) -> ParseResult<String> {
-//     alt((literal_c2s, quoted_string)).parse_next(input)
-// }
 
 fn extension_data(input: Input) -> ParseResult<Vec<ExtensionItem>> {
     separated(1.., extension_item, space1).parse_next(input)

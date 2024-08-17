@@ -14,6 +14,7 @@ pub mod errors;
 pub mod have_space;
 pub mod list_scripts;
 pub mod logout;
+pub mod put_script;
 pub mod start_tls;
 
 #[repr(transparent)]

@@ -1,16 +1,17 @@
-use std::fmt::Debug;
-
 use futures::{AsyncRead, AsyncWrite};
 
 use crate::client::{handle_bye, next_response, Authenticated, TlsMode};
-use crate::commands::ScriptName;
 use crate::internal::command::Command;
 use crate::internal::parser::{response_oknobye, QuotaVariant, Response, ResponseCode, Tag};
 use crate::{Connection, SieveError};
 
-#[derive(Debug)]
-pub enum HaveSpace {
-    Ok,
+pub enum PutScript {
+    Ok {
+        warnings: Option<String>,
+    },
+    InvalidScript {
+        error: Option<String>,
+    },
     Quota {
         variant: QuotaVariant,
         message: Option<String>,
@@ -22,24 +23,25 @@ pub enum HaveSpace {
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
-    pub async fn have_space(
-        mut self,
-        name: &ScriptName,
-        size: u64,
-    ) -> Result<(Self, HaveSpace), SieveError> {
-        self.send_command(Command::have_space(name, size)).await?;
+    pub async fn put_scripts(mut self) -> Result<(Self, PutScript), SieveError> {
+        self.send_command(Command::list_scripts()).await?;
 
         let response = next_response(&mut self.stream, response_oknobye).await?;
         let Response { tag, info } = handle_bye(&mut self.stream, response).await?;
 
         let res = match tag {
-            Tag::Ok(_) => HaveSpace::Ok,
+            Tag::Ok(_) => PutScript::Ok {
+                warnings: matches!(info.code, Some(ResponseCode::Warnings))
+                    .then_some(info.human)
+                    .flatten(),
+            },
             Tag::No(_) => match info.code {
-                Some(ResponseCode::Quota(variant)) => HaveSpace::Quota {
+                None => PutScript::InvalidScript { error: info.human },
+                Some(ResponseCode::Quota(variant)) => PutScript::Quota {
                     variant,
                     message: info.human,
                 },
-                code => HaveSpace::No {
+                code => PutScript::No {
                     code,
                     human: info.human,
                 },
