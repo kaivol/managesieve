@@ -5,10 +5,7 @@ use crate::commands::{handle_bye, next_response};
 use crate::parser::responses::response_getscript;
 use crate::parser::Response;
 use crate::state::{Authenticated, TlsMode};
-use crate::{
-    commands, AsyncRead, AsyncWrite, Connection, ResponseCode, ResponseInfo, Result, SieveError,
-    SieveNameStr,
-};
+use crate::{commands, AsyncRead, AsyncWrite, Connection, ResponseCode, Result, SieveNameStr};
 
 // #[derive(Debug)]
 // pub enum GetScript {

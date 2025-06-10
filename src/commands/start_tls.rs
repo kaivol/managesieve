@@ -31,8 +31,7 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthent
             return Err(SieveError::UnexpectedNo { info });
         }
 
-        let config = ClientConfig::with_platform_verifier()
-            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
+        let config = ClientConfig::with_platform_verifier().map_err(io::Error::other)?;
         let config = TlsConnector::from(Arc::new(config));
 
         let mut stream =

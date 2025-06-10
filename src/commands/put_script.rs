@@ -1,10 +1,7 @@
-use std::convert::Infallible;
-
 use tracing::warn;
 
 use crate::commands::{handle_bye, next_response};
 use crate::parser::responses::response_oknobye;
-use crate::parser::tag::No;
 use crate::parser::{Response, Tag};
 use crate::state::{Authenticated, TlsMode};
 use crate::{

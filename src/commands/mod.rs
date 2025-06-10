@@ -23,7 +23,6 @@ use winnow::error::ErrMode;
 use winnow::{ModalResult as PResult, Parser, Partial};
 
 pub use self::authenticate::*;
-pub use self::get_script::*;
 pub use self::have_space::*;
 pub use self::put_script::*;
 use crate::parser::responses::Input;
