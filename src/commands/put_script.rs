@@ -1,10 +1,16 @@
-use futures::{AsyncRead, AsyncWrite};
+use std::convert::Infallible;
 
-use crate::client::{handle_bye, next_response, Authenticated, TlsMode};
-use crate::internal::command::Command;
-use crate::internal::parser::{response_oknobye, QuotaVariant, Response, ResponseCode, Tag};
-use crate::{Connection, SieveError};
-use crate::commands::ScriptName;
+use tracing::warn;
+
+use crate::commands::{handle_bye, next_response};
+use crate::parser::responses::response_oknobye;
+use crate::parser::tag::No;
+use crate::parser::{Response, Tag};
+use crate::state::{Authenticated, TlsMode};
+use crate::{
+    commands, AsyncRead, AsyncWrite, Connection, QuotaVariant, ResponseCode, ResponseInfo,
+    SieveError, SieveNameStr,
+};
 
 #[derive(Debug)]
 pub enum PutScript {
@@ -18,37 +24,59 @@ pub enum PutScript {
         variant: QuotaVariant,
         message: Option<String>,
     },
-    No {
-        code: Option<ResponseCode>,
-        human: Option<String>,
-    },
 }
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
-    pub async fn put_scripts(mut self, name: &ScriptName, script: &str) -> Result<(Self, PutScript), SieveError> {
-        self.send_command(Command::put_script(name, script)).await?;
+    pub async fn put_scripts(
+        mut self,
+        name: &SieveNameStr,
+        script: &str,
+    ) -> Result<(Self, PutScript), SieveError> {
+        self.send_command(commands::definitions::put_script(name, script)).await?;
 
         let response = next_response(&mut self.stream, response_oknobye).await?;
-        let Response { tag, info } = handle_bye(&mut self.stream, response).await?;
+        let Response {
+            tag,
+            info: ResponseInfo { code, human },
+        } = handle_bye(&mut self.stream, response).await?;
 
         let res = match tag {
-            Tag::Ok(_) => PutScript::Ok {
-                warnings: matches!(info.code, Some(ResponseCode::Warnings))
-                    .then_some(info.human)
-                    .flatten(),
-            },
-            Tag::No(_) => match info.code {
-                None => PutScript::InvalidScript { error: info.human },
+            Tag::Ok(_) => {
+                let warnings = if code == Some(ResponseCode::Warnings) {
+                    human
+                } else {
+                    None
+                };
+                PutScript::Ok { warnings }
+            }
+            Tag::No(_) => match code {
                 Some(ResponseCode::Quota(variant)) => PutScript::Quota {
                     variant,
-                    message: info.human,
+                    message: human,
                 },
-                code => PutScript::No {
-                    code,
-                    human: info.human,
-                },
+                code => {
+                    if let Some(code) = code {
+                        warn!("unexpected response code `{code}` in `NO` reply from `HAVESPACE` command");
+                    }
+                    PutScript::InvalidScript { error: human }
+                }
             },
         };
+
+        // let res = match (tag, code) {
+        //     (Tag::Ok(_), Some(ResponseCode::Warnings)) => PutScript::Ok { warnings: human },
+        //     (Tag::Ok(_), _) => PutScript::Ok { warnings: None },
+        //     (Tag::No(_), None) => PutScript::InvalidScript { error: human },
+        //     (Tag::No(_), Some(ResponseCode::Quota(variant))) => PutScript::Quota {
+        //         variant,
+        //         message: human,
+        //     },
+        //     (Tag::No(_), code) => {
+        //         return Err(SieveError::UnexpectedNo {
+        //             info: ResponseInfo { code, human },
+        //         })
+        //     }
+        // };
 
         Ok((self, res))
     }

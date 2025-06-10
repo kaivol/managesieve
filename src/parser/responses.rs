@@ -5,68 +5,18 @@ use std::str::FromStr;
 
 use ascii::Caseless;
 use either::Either;
-use winnow::ascii::{crlf, digit1, escaped_transform, space1};
+use winnow::ascii::{crlf, digit1, escaped, space1};
 use winnow::binary::length_take;
 use winnow::combinator::{
     alt, cut_err, delimited, opt, preceded, repeat, separated, separated_pair, terminated,
 };
 use winnow::token::take_while;
-use winnow::{ascii, PResult, Parser, Partial};
+use winnow::{ascii, ModalResult as PResult, Parser, Partial};
+
+use crate::parser::{tag, Capability, Response, Tag};
+use crate::{ExtensionItem, QuotaVariant, ResponseCode, ResponseInfo, Version};
 
 pub type Input<'a, 'b> = &'a mut Partial<&'b str>;
-pub type ParseResult<T> = PResult<T>;
-
-macro_rules! tag_variant {
-    ($($name:ident),*) => {
-        pub mod tag {
-            $(
-                pub trait $name: std::fmt::Debug {}
-            )*
-        }
-        $(
-            #[derive(Debug, PartialEq, Clone, Copy)]
-            pub struct $name;
-            impl tag::$name for $name {}
-            impl tag::$name for Infallible {}
-        )*
-    };
-}
-tag_variant!(Ok, No, Bye);
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Tag<OK: tag::Ok, NO: tag::No, BYE: tag::Bye> {
-    Ok(OK),
-    No(NO),
-    Bye(BYE),
-}
-
-impl<NO: tag::No, BYE: tag::Bye> Tag<Ok, NO, BYE> {
-    fn ok() -> Self {
-        Self::Ok(Ok)
-    }
-
-    fn is_ok(&self) -> bool {
-        matches!(self, Tag::Ok(_))
-    }
-}
-
-impl<OK: tag::Ok, BYE: tag::Bye> Tag<OK, No, BYE> {
-    fn no() -> Self {
-        Self::No(No)
-    }
-}
-
-impl<OK: tag::Ok, NO: tag::No> Tag<OK, NO, Bye> {
-    fn bye() -> Self {
-        Self::Bye(Bye)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Response<OK: tag::Ok, NO: tag::No, BYE: tag::Bye> {
-    pub tag: Tag<OK, NO, BYE>,
-    pub info: ReponseInfo,
-}
 
 // impl std::fmt::Display for OkNoBye {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -78,103 +28,24 @@ pub struct Response<OK: tag::Ok, NO: tag::No, BYE: tag::Bye> {
 //     }
 // }
 
-pub type SieveUrl = String;
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum QuotaVariant {
-    None,
-    MaxScripts,
-    MaxSize,
-}
-
-type SieveString = String;
-type HumanReadableString = SieveString;
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ResponseCode {
-    AuthTooWeak,
-    EncryptNeeded,
-    Quota(QuotaVariant),
-    Sasl(String),
-    Referral(SieveUrl),
-    TransitionNeeded,
-    TryLater,
-    Active,
-    Nonexistent,
-    AlreadyExists,
-    Warnings,
-    Tag(String),
-    Extension {
-        name: String,
-        data: Option<Vec<ExtensionItem>>,
-    },
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ExtensionItem {
-    String(String),
-    Number(u64),
-    ExtensionData(Vec<ExtensionItem>),
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct ReponseInfo {
-    pub code: Option<ResponseCode>,
-    pub human: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct Version {
-    major: u64,
-    minor: u64,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Capability {
-    Implementation(String),
-    Sasl(Vec<String>),
-    Sieve(Vec<String>),
-    StartTls,
-    MaxRedirects(u64),
-    Notify(Vec<String>),
-    Language(String),
-    Owner(String),
-    Version(Version),
-    Unknown(String, Option<String>),
-}
-
-// see section 1.6 of rfc 5804
-pub fn is_bad_sieve_name_char(c: char) -> bool {
-    match c {
-        c if c <= 0x1f as char => true,
-        c if c >= 0x7f as char && c <= 0x9f as char => true,
-        c if c == '\u{2028}' || c == '\u{2029}' => true,
-        _ => false,
-    }
-}
-
-pub(crate) fn nobye(input: Input) -> ParseResult<Tag<Infallible, No, Bye>> {
-    alt((Caseless("NO").value(Tag::no()), Caseless("BYE").value(Tag::bye()))).parse_next(input)
-}
-
-fn literal_s2c_len(input: Input) -> ParseResult<u64> {
+fn literal_s2c_len(input: Input) -> PResult<u64> {
     terminated(delimited("{", digit1.parse_to(), "}"), crlf).parse_next(input)
 }
 
 // Needs to return String because quoted_string does too.
-fn literal_s2c(input: Input) -> ParseResult<String> {
+fn literal_s2c(input: Input) -> PResult<String> {
     length_take(literal_s2c_len).map(ToOwned::to_owned).parse_next(input)
 }
 
-pub fn sievestring_s2c(input: Input) -> ParseResult<String> {
+pub fn sievestring_s2c(input: Input) -> PResult<String> {
     alt((literal_s2c, quoted_string)).parse_next(input)
 }
 
-fn extension_data(input: Input) -> ParseResult<Vec<ExtensionItem>> {
+fn extension_data(input: Input) -> PResult<Vec<ExtensionItem>> {
     separated(1.., extension_item, space1).parse_next(input)
 }
 
-fn extension_item(input: Input) -> ParseResult<ExtensionItem> {
+fn extension_item(input: Input) -> PResult<ExtensionItem> {
     alt((
         //TODO atom?
         sievestring_s2c.map(ExtensionItem::String),
@@ -184,7 +55,7 @@ fn extension_item(input: Input) -> ParseResult<ExtensionItem> {
     .parse_next(input)
 }
 
-fn code(input: Input) -> ParseResult<ResponseCode> {
+fn code(input: Input) -> PResult<ResponseCode> {
     delimited(
         "(",
         alt((
@@ -210,16 +81,19 @@ fn code(input: Input) -> ParseResult<ResponseCode> {
     .parse_next(input)
 }
 
-fn quoted_string(input: Input) -> ParseResult<String> {
-    delimited(
-        "\"",
-        escaped_transform(
-            take_while(0.., |c| c != '\\' && c != '"'),
-            '\\',
-            alt(("\\".value("\\"), "\"".value("\""))),
+fn quoted_string(input: Input) -> PResult<String> {
+    alt((
+        "\"\"".value(String::new()),
+        delimited(
+            "\"",
+            escaped(
+                take_while(1.., |c| c != '\\' && c != '"'),
+                '\\',
+                alt(("\\".value("\\"), "\"".value("\""))),
+            ),
+            "\"",
         ),
-        "\"",
-    )
+    ))
     .parse_next(input)
 }
 
@@ -258,7 +132,7 @@ fn quoted_string(input: Input) -> ParseResult<String> {
 //     assert!(matches!(active_sieve_name("   "), Ok((_, None))));
 // }
 
-pub fn response_ok(input: Input) -> ParseResult<Response<Ok, Infallible, Infallible>> {
+pub fn response_ok(input: Input) -> PResult<Response<tag::Ok, Infallible, Infallible>> {
     terminated(
         (
             Caseless("OK"),
@@ -269,12 +143,12 @@ pub fn response_ok(input: Input) -> ParseResult<Response<Ok, Infallible, Infalli
     )
     .map(|(_, code, human)| Response {
         tag: Tag::ok(),
-        info: ReponseInfo { code, human },
+        info: ResponseInfo { code, human },
     })
     .parse_next(input)
 }
 
-pub fn response_nobye(input: Input) -> ParseResult<Response<Infallible, No, Bye>> {
+pub fn response_nobye(input: Input) -> PResult<Response<Infallible, tag::No, tag::Bye>> {
     terminated(
         (
             alt((Caseless("NO").value(Tag::no()), Caseless("BYE").value(Tag::bye()))),
@@ -285,12 +159,12 @@ pub fn response_nobye(input: Input) -> ParseResult<Response<Infallible, No, Bye>
     )
     .map(|(oknobye, code, human)| Response {
         tag: oknobye,
-        info: ReponseInfo { code, human },
+        info: ResponseInfo { code, human },
     })
     .parse_next(input)
 }
 
-pub fn response_oknobye(input: Input) -> ParseResult<Response<Ok, No, Bye>> {
+pub fn response_oknobye(input: Input) -> PResult<Response<tag::Ok, tag::No, tag::Bye>> {
     alt((
         response_ok.map(|r| Response {
             tag: Tag::ok(),
@@ -307,7 +181,7 @@ pub fn response_oknobye(input: Input) -> ParseResult<Response<Ok, No, Bye>> {
     .parse_next(input)
 }
 
-fn space_separated_string_s2c(input: Input) -> ParseResult<Vec<String>> {
+fn space_separated_string_s2c(input: Input) -> PResult<Vec<String>> {
     sievestring_s2c
         .map(|s| {
             if s.is_empty() {
@@ -319,24 +193,24 @@ fn space_separated_string_s2c(input: Input) -> ParseResult<Vec<String>> {
         .parse_next(input)
 }
 
-fn space_separated_string_not_empty_s2c(input: Input) -> ParseResult<Vec<String>> {
+fn space_separated_string_not_empty_s2c(input: Input) -> PResult<Vec<String>> {
     sievestring_s2c
         .try_map(|s| {
             if s.is_empty() {
                 Err(u8::from_str("").unwrap_err())
                 // Err("expected non-empty space-separated string, found empty string")
             } else {
-                Result::Ok(s.split(' ').map(String::from).collect())
+                Ok(s.split(' ').map(String::from).collect())
             }
         })
         .parse_next(input)
 }
 
-fn number_string_s2c(input: Input) -> ParseResult<u64> {
+fn number_string_s2c(input: Input) -> PResult<u64> {
     sievestring_s2c.try_map(|s| s.parse::<u64>()).parse_next(input)
 }
 
-fn version(input: Input) -> ParseResult<Version> {
+fn version(input: Input) -> PResult<Version> {
     delimited(
         "\"",
         separated_pair(
@@ -350,7 +224,7 @@ fn version(input: Input) -> ParseResult<Version> {
     .parse_next(input)
 }
 
-fn single_capability(input: Input) -> ParseResult<Capability> {
+fn single_capability(input: Input) -> PResult<Capability> {
     //TODO capability name as accept literal-s2c
     terminated(
         alt((
@@ -382,56 +256,30 @@ fn single_capability(input: Input) -> ParseResult<Capability> {
     .parse_next(input)
 }
 
-pub fn response_capability(input: Input) -> ParseResult<(Vec<Capability>, Response<Ok, No, Bye>)> {
+pub fn response_capability(
+    input: Input,
+) -> PResult<(Vec<Capability>, Response<tag::Ok, tag::No, tag::Bye>)> {
     (repeat(0.., single_capability), response_oknobye).parse_next(input)
 }
 
-pub fn response_starttls(
+pub fn response_authenticate(
     input: Input,
-) -> ParseResult<
-    Either<
-        (Response<Ok, Infallible, Infallible>, (Vec<Capability>, Response<Ok, No, Bye>)),
-        Response<Infallible, No, Bye>,
-    >,
-> {
-    alt((
-        (response_ok, response_capability).map(Either::Left),
-        response_nobye.map(Either::Right),
-    ))
-    .parse_next(input)
-}
-
-/// Server responds to authenticate with either a challenge or a oknobye
-/// response.
-pub fn response_authenticate_initial(
-    input: Input,
-) -> ParseResult<Either<String, Response<Infallible, No, Bye>>> {
+) -> PResult<Either<String, Response<tag::Ok, tag::No, tag::Bye>>> {
     alt((
         terminated(sievestring_s2c, crlf).map(Either::Left),
-        response_nobye.map(Either::Right),
+        response_oknobye.map(Either::Right),
     ))
     .parse_next(input)
 }
 
-/// Server responds to client response with oknobye and can also include new
-/// capabilities if OK.
-// pub fn response_authenticate_complete(
-//     input: Input,
-// ) -> ParseResult<(Option<Vec<Capability>>, Response<NoBye>)> {
-//     alt((
-//         (response_ok, opt(response_capability)).map(|(a, b)| match b {
-//             None => (None, a),
-//             Some((s, r)) => (Some(s), r),
-//         }),
-//         response_nobye.map(|r| (None, r)),
-//     ))
-//     .parse_next(input)
-// }
-
+#[allow(clippy::type_complexity)]
 pub fn response_getscript(
     input: Input,
-) -> ParseResult<
-    Either<(String, Response<Ok, Infallible, Infallible>), Response<Infallible, No, Bye>>,
+) -> PResult<
+    Either<
+        (String, Response<tag::Ok, Infallible, Infallible>),
+        Response<Infallible, tag::No, tag::Bye>,
+    >,
 > {
     alt((
         separated_pair(sievestring_s2c, crlf, response_ok).map(Either::Left),
@@ -440,9 +288,10 @@ pub fn response_getscript(
     .parse_next(input)
 }
 
+#[allow(clippy::type_complexity)]
 pub fn response_listscripts(
     input: Input,
-) -> ParseResult<(Vec<(String, bool)>, Response<Ok, No, Bye>)> {
+) -> PResult<(Vec<(String, bool)>, Response<tag::Ok, tag::No, tag::Bye>)> {
     (
         repeat(
             0..,
@@ -639,8 +488,8 @@ pub fn response_listscripts(
 //         //         "",
 //         //         (
 //         //             vec![
-//         //                 Capability::Implementation("Dovecot Pigeonhole".into()),
-//         //                 Capability::Sieve(vec![
+//         //                 capability::Implementation("Dovecot Pigeonhole".into()),
+//         //                 capability::Sieve(vec![
 //         //                     "fileinto".into(),
 //         //                     "reject".into(),
 //         //                     "envelope".into(),
@@ -660,14 +509,14 @@ pub fn response_listscripts(
 //         //                     "mailbox".into(),
 //         //                     "date".into(),
 //         //                 ]),
-//         //                 Capability::Notify(vec!["mailto".into()]),
-//         //                 Capability::Sasl(vec![]),
-//         //                 Capability::MaxRedirects(42),
-//         //                 Capability::StartTls,
-//         //                 Capability::Version(Version { major: 1, minor: 0 }),
+//         //                 capability::Notify(vec!["mailto".into()]),
+//         //                 capability::Sasl(vec![]),
+//         //                 capability::MaxRedirects(42),
+//         //                 capability::StartTls,
+//         //                 capability::Version(Version { major: 1, minor: 0 }),
 //         //             ],
 //         //             Response {
-//         //                 tag: OkNoBye::Ok,
+//         //                 tag: OkNoBye::tag::Ok,
 //         //                 code: None,
 //         //                 human: Some("Dovecot ready.".into()),
 //         //             }

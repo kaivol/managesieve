@@ -1,67 +1,53 @@
-use std::fmt::Debug;
+use std::io;
 use std::sync::Arc;
 
-use futures::{AsyncRead, AsyncWrite};
 use futures_rustls::pki_types::ServerName;
-use futures_rustls::rustls::{ClientConfig, RootCertStore};
+use futures_rustls::rustls::ClientConfig;
 use futures_rustls::TlsConnector;
-use thiserror::Error;
+use rustls_platform_verifier::ConfigVerifierExt;
+use tracing::warn;
 
-use crate::client::{handle_bye, next_response, NoTls, Tls, Unauthenticated};
-use crate::commands::errors::{CapabilitiesError, SieveError, UnexpectedNo};
-use crate::commands::verify_capabilities;
-use crate::internal::command::Command;
-use crate::internal::parser::{response_capability, response_ok, Response, Tag};
-use crate::{bail, Connection};
-
-#[derive(Error, Debug)]
-pub enum StartTlsError {
-    #[error("STARTTLS is not supported")]
-    Unsupported,
-    #[error(transparent)]
-    UnexpectedNo(#[from] UnexpectedNo),
-    #[error(transparent)]
-    InvalidCapabilities(#[from] CapabilitiesError),
-    #[error(transparent)]
-    Other(#[from] SieveError),
-}
+use crate::capabilities::verify_capabilities;
+use crate::commands::{handle_bye, next_response};
+use crate::parser::responses::{response_capability, response_oknobye};
+use crate::parser::Response;
+use crate::state::{NoTls, Tls, Unauthenticated};
+use crate::{commands, AsyncRead, AsyncWrite, Connection, SieveError};
 
 impl<STREAM: AsyncRead + AsyncWrite + Unpin> Connection<STREAM, NoTls, Unauthenticated> {
     pub async fn start_tls(
         mut self,
         server_name: ServerName<'static>,
-    ) -> Result<Connection<STREAM, Tls, Unauthenticated>, StartTlsError> {
-        // Abort immediately if the server does not support STARTTLS
+    ) -> Result<Connection<STREAM, Tls, Unauthenticated>, SieveError> {
         if !self.capabilities.start_tls {
-            return Err(StartTlsError::Unsupported);
+            warn!("server does not support TLS");
         }
 
-        self.send_command(Command::start_tls()).await?;
+        self.send_command(commands::definitions::start_tls).await?;
 
-        let Response {
-            tag: Tag::Ok(_),
-            info: _info,
-        } = next_response(&mut self.stream, response_ok).await?;
+        let response = next_response(&mut self.stream, response_oknobye).await?;
+        let Response { tag, info } = handle_bye(&mut self.stream, response).await?;
+        if tag.is_no() {
+            return Err(SieveError::UnexpectedNo { info });
+        }
 
-        let root_store = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect::<RootCertStore>();
-        #[rustfmt::skip] let config = ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+        let config = ClientConfig::with_platform_verifier()
+            .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
         let config = TlsConnector::from(Arc::new(config));
 
-        let mut stream = config.connect(server_name, self.stream).await.map_err(SieveError::Io)?;
+        let mut stream =
+            config.connect(server_name, self.stream).await.map_err(SieveError::from)?;
 
         let (capabilities, response) = next_response(&mut stream, response_capability).await?;
         let Response { tag, info } = handle_bye(&mut stream, response).await?;
-
-        match tag {
-            Tag::Ok(_) => Ok(Connection {
-                stream,
-                // TODO close connection or send LOGOUT when capabilities are invalid?
-                capabilities: verify_capabilities(capabilities)?,
-                _p: Default::default(),
-            }),
-            Tag::No(_) => bail!(UnexpectedNo { info }),
+        if tag.is_no() {
+            return Err(SieveError::UnexpectedNo { info });
         }
+
+        Ok(Connection {
+            stream,
+            capabilities: verify_capabilities(capabilities)?,
+            _p: Default::default(),
+        })
     }
 }
