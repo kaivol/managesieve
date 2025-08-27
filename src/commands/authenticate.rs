@@ -81,24 +81,6 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
                     client_finished = client_response.is_finished();
                     let client_response = client_response.response().unwrap_or(vec![]);
 
-                    // let client_response = match client_response {
-                    //     SaslState::Yielded(client_response) => client_response,
-                    //     SaslState::CompleteWithFinalResponse(client_response) => {
-                    //         // SASL is considered completed, next server message should not be a
-                    //         // further SASL challenge
-                    //         client_finished = true;
-                    //         client_response
-                    //     }
-                    //     SaslState::Complete => {
-                    //         // SASL is considered completed, next server message should not be a
-                    //         // further SASL challenge
-                    //         client_finished = true;
-                    //
-                    //         // the server sent the additional data as a challenge, we respond with
-                    //         // an empty response
-                    //         vec![]
-                    //     }
-                    // };
                     self.send_command(definitions::sasl_string(&STANDARD.encode(client_response)))
                         .await?;
                 }

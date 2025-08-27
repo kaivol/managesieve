@@ -10,11 +10,9 @@ pub struct SieveNameString(String);
 impl SieveNameString {
     pub fn new(name: impl Into<String>) -> Result<Self, SieveNameError> {
         let name = name.into();
-        if is_bad_sieve_name(&name) {
-            Err(SieveNameError)
-        } else {
-            Ok(SieveNameString(name))
-        }
+
+        SieveNameStr::new(&name)?;
+        Ok(SieveNameString(name))
     }
 
     pub fn as_sieve_name_str(&self) -> &SieveNameStr {
@@ -38,7 +36,7 @@ impl AsRef<str> for SieveNameString {
 
 impl AsRef<SieveNameStr> for SieveNameString {
     fn as_ref(&self) -> &SieveNameStr {
-        self
+        self.deref()
     }
 }
 
@@ -72,10 +70,11 @@ pub struct SieveNameStr(str);
 impl SieveNameStr {
     pub fn new(name: &impl AsRef<str>) -> Result<&Self, SieveNameError> {
         let name = name.as_ref();
-        if name.chars().any(is_bad_sieve_name_char) {
-            return Err(SieveNameError);
+        if is_bad_sieve_name(name) {
+            Err(SieveNameError)
+        } else {
+            Ok(unsafe { &*(name as *const str as *const SieveNameStr) })
         }
-        Ok(unsafe { &*(name as *const str as *const SieveNameStr) })
     }
 }
 

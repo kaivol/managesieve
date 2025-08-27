@@ -1,12 +1,16 @@
 #![allow(unused)]
 
 use std::convert::Infallible;
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
 
 use clap::{Args, Command, Parser, Subcommand, arg};
 use color_eyre::eyre;
 use color_eyre::eyre::{WrapErr, bail, eyre};
-use managesieve::commands::{Authenticate, GetScript};
+use managesieve::commands::{Authenticate};
 use managesieve::sasl::{InitialSaslState, Sasl, SaslError, SaslState};
 use managesieve::state::{Authenticated, Tls, TlsMode, Unauthenticated};
 use managesieve::{AsyncRead, AsyncWrite, Connection, ServerName, SieveNameStr, SieveNameString};
@@ -18,7 +22,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Arguments {
-    #[arg(long, short, required = true)]
+    /// Address of the sieve server
+    #[arg(required = true)]
     address: String,
 
     #[arg(long, short, default_value_t = 4190)]
@@ -46,6 +51,8 @@ enum Commands {
     Get {
         #[arg(required = true)]
         name: SieveNameString,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -93,8 +100,8 @@ pub async fn main() -> eyre::Result<()> {
             match commands {
                 Commands::Info => println!("{:#?}", sieve.capabilities()),
                 Commands::List => list_scripts(sieve).await?,
-                Commands::Get { name } => {
-                    get_script(sieve, &name).await?;
+                Commands::Get { name, output } => {
+                    get_script(sieve, &name, output.as_deref()).await?;
                 }
             }
         } else {
@@ -130,15 +137,19 @@ async fn list_scripts<STREAM: AsyncWrite + AsyncRead + Unpin, TLS: TlsMode>(
 async fn get_script<STREAM: AsyncWrite + AsyncRead + Unpin, TLS: TlsMode>(
     sieve: Connection<STREAM, TLS, Authenticated>,
     name: &SieveNameStr,
+    output: Option<&Path>,
 ) -> eyre::Result<()> {
-    let (_, result) = sieve.get_script(name).await?;
+    let (_, script) = sieve.get_script(name).await?;
 
-    match result {
-        GetScript::Ok { script } => println!("{}", script),
-        GetScript::NonExistent => bail!("script `{name}` does not exist"),
-        GetScript::No { info } => {
-            bail!("script operation failed: {:?}", info)
+    if let Some(script) = script {
+        if let Some(output) = output { 
+            let mut file = File::create_new(output)?;
+            file.write_all(script.as_bytes())?;
+        } else {
+            println!("{}", script);
         }
+    } else {
+        bail!("script `{name}` does not exist");
     }
 
     Ok(())
