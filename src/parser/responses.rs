@@ -137,7 +137,7 @@ pub fn response_ok(input: Input) -> PResult<Response<tag::Ok, Infallible, Infall
         (
             Caseless("OK"),
             opt(preceded(space1, code)),
-            opt(preceded(space1, quoted_string)),
+            opt(preceded(space1, sievestring_s2c)),
         ),
         crlf,
     )
@@ -153,7 +153,7 @@ pub fn response_nobye(input: Input) -> PResult<Response<Infallible, tag::No, tag
         (
             alt((Caseless("NO").value(Tag::no()), Caseless("BYE").value(Tag::bye()))),
             opt(preceded(space1, code)),
-            opt(preceded(space1, quoted_string)),
+            opt(preceded(space1, sievestring_s2c)),
         ),
         crlf,
     )
@@ -298,7 +298,7 @@ pub fn response_listscripts(
             terminated(
                 (
                     sievestring_s2c.try_map(SieveNameString::new),
-                    opt((space1, Caseless("ACTIVE"))).map(|o| o.is_some())
+                    opt((space1, Caseless("ACTIVE"))).map(|o| o.is_some()),
                 ),
                 crlf,
             ),
