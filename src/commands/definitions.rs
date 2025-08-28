@@ -72,7 +72,7 @@ pub(crate) fn authenticate<'a, STREAM: AsyncRead + AsyncWrite + Unpin>(
 
 pub(crate) fn sasl_string<STREAM: AsyncRead + AsyncWrite + Unpin>(
     sasl: &str,
-) -> impl Command<STREAM> {
+) -> impl Command<'_, STREAM> {
     async move |mut write: SieveWriter<STREAM>| {
         write.string(sasl).await?;
         write.crlf().await?;
@@ -107,7 +107,7 @@ pub(crate) async fn capability<STREAM: AsyncRead + AsyncWrite + Unpin>(
 pub(crate) fn have_space<STREAM: AsyncRead + AsyncWrite + Unpin>(
     name: &SieveNameStr,
     size: u32,
-) -> impl Command<STREAM> {
+) -> impl Command<'_, STREAM> {
     async move |mut write: SieveWriter<STREAM>| {
         write.literal("HAVESPACE").await?;
         write.space().await?;
@@ -144,7 +144,7 @@ pub(crate) async fn list_scripts<STREAM: AsyncRead + AsyncWrite + Unpin>(
 
 pub(crate) fn set_active<STREAM: AsyncRead + AsyncWrite + Unpin>(
     name: &SieveNameStr,
-) -> impl Command<STREAM> {
+) -> impl Command<'_, STREAM> {
     async move |mut write: SieveWriter<STREAM>| {
         write.literal("SETACTIVE").await?;
         write.space().await?;
@@ -156,7 +156,7 @@ pub(crate) fn set_active<STREAM: AsyncRead + AsyncWrite + Unpin>(
 
 pub(crate) fn get_script<STREAM: AsyncRead + AsyncWrite + Unpin>(
     name: &SieveNameStr,
-) -> impl Command<STREAM> {
+) -> impl Command<'_, STREAM> {
     async move |mut write: SieveWriter<STREAM>| {
         write.literal("GETSCRIPT").await?;
         write.space().await?;
@@ -168,7 +168,7 @@ pub(crate) fn get_script<STREAM: AsyncRead + AsyncWrite + Unpin>(
 
 pub(crate) fn delete_script<STREAM: AsyncRead + AsyncWrite + Unpin>(
     name: &SieveNameStr,
-) -> impl Command<STREAM> {
+) -> impl Command<'_, STREAM> {
     async move |mut write: SieveWriter<STREAM>| {
         write.literal("DELETESCRIPT").await?;
         write.space().await?;
@@ -195,7 +195,7 @@ pub(crate) fn rename_script<'a, STREAM: AsyncRead + AsyncWrite + Unpin>(
 
 pub(crate) fn check_script<STREAM: AsyncRead + AsyncWrite + Unpin>(
     script: &str,
-) -> impl Command<STREAM> {
+) -> impl Command<'_, STREAM> {
     async move |mut write: SieveWriter<STREAM>| {
         write.literal("CHECKSCRIPT").await?;
         write.space().await?;
