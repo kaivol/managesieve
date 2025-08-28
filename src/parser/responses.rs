@@ -14,7 +14,7 @@ use winnow::token::take_while;
 use winnow::{ascii, ModalResult as PResult, Parser, Partial};
 
 use crate::parser::{tag, Capability, Response, Tag};
-use crate::{ExtensionItem, QuotaVariant, ResponseCode, ResponseInfo, Version};
+use crate::{ExtensionItem, QuotaVariant, ResponseCode, ResponseInfo, SieveNameString, Version};
 
 pub type Input<'a, 'b> = &'a mut Partial<&'b str>;
 
@@ -291,12 +291,15 @@ pub fn response_getscript(
 #[allow(clippy::type_complexity)]
 pub fn response_listscripts(
     input: Input,
-) -> PResult<(Vec<(String, bool)>, Response<tag::Ok, tag::No, tag::Bye>)> {
+) -> PResult<(Vec<(SieveNameString, bool)>, Response<tag::Ok, tag::No, tag::Bye>)> {
     (
         repeat(
             0..,
             terminated(
-                (sievestring_s2c, opt((space1, Caseless("ACTIVE"))).map(|o| o.is_some())),
+                (
+                    sievestring_s2c.try_map(SieveNameString::new),
+                    opt((space1, Caseless("ACTIVE"))).map(|o| o.is_some())
+                ),
                 crlf,
             ),
         ),
