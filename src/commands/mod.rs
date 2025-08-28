@@ -1,4 +1,5 @@
 mod authenticate;
+mod check_script;
 mod connect;
 mod definitions;
 mod get_script;
@@ -23,6 +24,7 @@ use winnow::error::ErrMode;
 use winnow::{ModalResult as PResult, Parser, Partial};
 
 pub use self::authenticate::*;
+pub use self::check_script::*;
 pub use self::have_space::*;
 pub use self::put_script::*;
 use crate::parser::responses::Input;
