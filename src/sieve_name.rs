@@ -20,6 +20,12 @@ impl SieveNameString {
     }
 }
 
+impl Display for SieveNameString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl Deref for SieveNameString {
     type Target = SieveNameStr;
 
