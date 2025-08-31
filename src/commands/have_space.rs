@@ -15,7 +15,7 @@ use crate::{
 pub enum HaveSpace {
     Ok,
     No {
-        quota: Option<QuotaVariant>,
+        quota: QuotaVariant,
         message: Option<String>,
     },
 }
@@ -35,12 +35,12 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
             Tag::Ok(_) => HaveSpace::Ok,
             Tag::No(_) => {
                 let quota = match info.code {
-                    Some(ResponseCode::Quota(variant)) => Some(variant),
-                    code => {
-                        if let Some(code) = code {
-                            warn!("unexpected response code `{code}` in `NO` reply from `HAVESPACE` command");
-                        }
-                        None
+                    Some(ResponseCode::Quota(variant)) => variant,
+                    None => QuotaVariant::Unspecified,
+                    Some(code) => {
+                        // according to spec, unknown response codes must be ignored
+                        warn!("unexpected response code `{code}` in `NO` reply from `HAVESPACE` command");
+                        QuotaVariant::Unspecified
                     }
                 };
                 HaveSpace::No {
