@@ -60,21 +60,6 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
             },
         };
 
-        // let res = match (tag, code) {
-        //     (Tag::Ok(_), Some(ResponseCode::Warnings)) => PutScript::Ok { warnings: human },
-        //     (Tag::Ok(_), _) => PutScript::Ok { warnings: None },
-        //     (Tag::No(_), None) => PutScript::InvalidScript { error: human },
-        //     (Tag::No(_), Some(ResponseCode::Quota(variant))) => PutScript::Quota {
-        //         variant,
-        //         message: human,
-        //     },
-        //     (Tag::No(_), code) => {
-        //         return Err(SieveError::UnexpectedNo {
-        //             info: ResponseInfo { code, human },
-        //         })
-        //     }
-        // };
-
         Ok((self, res))
     }
 }

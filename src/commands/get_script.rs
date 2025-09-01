@@ -7,17 +7,6 @@ use crate::parser::Response;
 use crate::state::{Authenticated, TlsMode};
 use crate::{commands, AsyncRead, AsyncWrite, Connection, ResponseCode, Result, SieveNameStr};
 
-// #[derive(Debug)]
-// pub enum GetScript {
-//     Ok {
-//         script: String,
-//     },
-//     NonExistent,
-//     No {
-//         info: ResponseInfo
-//     },
-// }
-
 impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TLS, Authenticated> {
     pub async fn get_script(mut self, name: &SieveNameStr) -> Result<(Self, Option<String>)> {
         self.send_command(commands::definitions::get_script(name)).await?;
