@@ -11,12 +11,12 @@ use winnow::combinator::{
     alt, cut_err, delimited, opt, preceded, repeat, separated, separated_pair, terminated,
 };
 use winnow::token::take_while;
-use winnow::{ascii, ModalResult as PResult, Parser, Partial};
+use winnow::{ascii, BStr, ModalResult as PResult, Parser, Partial};
 
 use crate::parser::{tag, Capability, Response, Tag};
 use crate::{ExtensionItem, Quota, ResponseCode, ResponseInfo, SieveNameString, Version};
 
-pub type Input<'a, 'b> = &'a mut Partial<&'b str>;
+pub type Input<'a, 'b> = &'a mut Partial<&'b BStr>;
 
 // impl std::fmt::Display for OkNoBye {
 //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -34,7 +34,10 @@ fn literal_s2c_len(input: Input) -> PResult<u64> {
 
 // Needs to return String because quoted_string does too.
 fn literal_s2c(input: Input) -> PResult<String> {
-    length_take(literal_s2c_len).map(ToOwned::to_owned).parse_next(input)
+    length_take(literal_s2c_len)
+        .try_map(str::from_utf8)
+        .map(ToOwned::to_owned)
+        .parse_next(input)
 }
 
 pub fn sievestring_s2c(input: Input) -> PResult<String> {
@@ -87,12 +90,13 @@ fn quoted_string(input: Input) -> PResult<String> {
         delimited(
             "\"",
             escaped(
-                take_while(1.., |c| c != '\\' && c != '"'),
+                take_while(1.., |c| c != b'\\' && c != b'"'),
                 '\\',
-                alt(("\\".value("\\"), "\"".value("\""))),
+                alt(("\\".value(b'\\'), "\"".value(b'\"'))),
             ),
             "\"",
-        ),
+        )
+        .try_map(String::from_utf8),
     ))
     .parse_next(input)
 }
@@ -214,9 +218,9 @@ fn version(input: Input) -> PResult<Version> {
     delimited(
         "\"",
         separated_pair(
-            digit1.try_map(|s: &str| s.parse::<u64>()),
+            digit1.try_map(|s: &[u8]| str::from_utf8(s)).try_map(|s| s.parse::<u64>()),
             ".",
-            digit1.try_map(|s: &str| s.parse::<u64>()),
+            digit1.try_map(|s: &[u8]| str::from_utf8(s)).try_map(|s| s.parse::<u64>()),
         )
         .map(|(major, minor)| Version { major, minor }),
         "\"",

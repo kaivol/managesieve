@@ -14,14 +14,14 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{ready, Poll};
-use std::{io, str};
+use std::io;
 
 use definitions::{Command, SieveWriter};
 use futures::AsyncWriteExt;
 use tracing::{debug, warn};
 use winnow::combinator::{eof, terminated};
 use winnow::error::ErrMode;
-use winnow::{ModalResult as PResult, Parser, Partial};
+use winnow::{BStr, ModalResult as PResult, Parser, Partial};
 
 pub use self::authenticate::*;
 pub use self::check_script::*;
@@ -93,7 +93,7 @@ pub(crate) fn next_response_inner<STREAM: AsyncRead + Unpin, RES: 'static>(
     stream: &mut STREAM,
     parser: fn(Input) -> PResult<RES>,
 ) -> impl Future<Output = Result<RES, SieveError>> + '_ {
-    let mut buf = String::new();
+    let mut buf = Vec::new();
     let mut pin = Pin::new(stream);
 
     std::future::poll_fn::<Result<RES, SieveError>, _>(move |cx| loop {
@@ -104,16 +104,14 @@ pub(crate) fn next_response_inner<STREAM: AsyncRead + Unpin, RES: 'static>(
             return Poll::Ready(Err(SieveError::Io(io::Error::from(io::ErrorKind::UnexpectedEof))));
         }
 
-        let Ok(str) = str::from_utf8(&temp[0..read_count]) else {
-            return Poll::Ready(Err(SieveError::Io(io::Error::from(io::ErrorKind::InvalidData))));
-        };
-        buf.push_str(str);
+        buf.extend_from_slice(&temp[0..read_count]);
 
-        match terminated(parser, eof).parse_next(&mut Partial::new(buf.as_str())) {
+        let mut partial = Partial::new(BStr::new(&buf));
+        match terminated(parser, eof).parse_next(&mut partial) {
             Err(ErrMode::Incomplete(_)) => continue,
             Ok(res) => return Poll::Ready(Ok(res)),
             Err(err) => {
-                warn!(?err, buf);
+                warn!(?err);
                 // TODO improve parser error handling
                 return Poll::Ready(Err(SieveError::Syntax));
             }
