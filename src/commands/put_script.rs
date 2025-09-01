@@ -5,8 +5,8 @@ use crate::parser::responses::response_oknobye;
 use crate::parser::{Response, Tag};
 use crate::state::{Authenticated, TlsMode};
 use crate::{
-    commands, AsyncRead, AsyncWrite, Connection, QuotaVariant, ResponseCode, ResponseInfo,
-    SieveError, SieveNameStr,
+    commands, AsyncRead, AsyncWrite, Connection, Quota, ResponseCode, ResponseInfo, SieveError,
+    SieveNameStr,
 };
 
 #[derive(Debug)]
@@ -17,8 +17,8 @@ pub enum PutScript {
     InvalidScript {
         error: Option<String>,
     },
-    Quota {
-        variant: QuotaVariant,
+    InsufficientQuota {
+        quota: Quota,
         message: Option<String>,
     },
 }
@@ -47,8 +47,8 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
                 PutScript::Ok { warnings }
             }
             Tag::No(_) => match code {
-                Some(ResponseCode::Quota(variant)) => PutScript::Quota {
-                    variant,
+                Some(ResponseCode::Quota(variant)) => PutScript::InsufficientQuota {
+                    quota: variant,
                     message: human,
                 },
                 code => {

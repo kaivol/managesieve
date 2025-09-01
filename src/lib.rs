@@ -110,8 +110,8 @@ pub enum SieveError {
 // }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum QuotaVariant {
-    None,
+pub enum Quota {
+    Unspecified,
     MaxScripts,
     MaxSize,
 }
@@ -120,7 +120,7 @@ pub enum QuotaVariant {
 pub enum ResponseCode {
     AuthTooWeak,
     EncryptNeeded,
-    Quota(QuotaVariant),
+    Quota(Quota),
     Referral(String),
     Sasl(String),
     TransitionNeeded,
@@ -141,9 +141,9 @@ impl Display for ResponseCode {
         match self {
             ResponseCode::AuthTooWeak => write!(f, "AUTH-TOO-WEAK")?,
             ResponseCode::EncryptNeeded => write!(f, "ENCRYPT-NEEDED")?,
-            ResponseCode::Quota(QuotaVariant::None) => write!(f, "QUOTA")?,
-            ResponseCode::Quota(QuotaVariant::MaxScripts) => write!(f, "QUOTA/MAXSCRIPTS")?,
-            ResponseCode::Quota(QuotaVariant::MaxSize) => write!(f, "QUOTA/MAXSIZE")?,
+            ResponseCode::Quota(Quota::Unspecified) => write!(f, "QUOTA")?,
+            ResponseCode::Quota(Quota::MaxScripts) => write!(f, "QUOTA/MAXSCRIPTS")?,
+            ResponseCode::Quota(Quota::MaxSize) => write!(f, "QUOTA/MAXSIZE")?,
             ResponseCode::Referral(r) => write!(f, "REFERRAL {r}")?,
             ResponseCode::Sasl(_) => write!(f, "SASL ...")?,
             ResponseCode::TransitionNeeded => write!(f, "TRANSITION-NEEDED")?,

@@ -7,15 +7,15 @@ use crate::parser::responses::response_oknobye;
 use crate::parser::{Response, Tag};
 use crate::state::{Authenticated, TlsMode};
 use crate::{
-    commands, AsyncRead, AsyncWrite, Connection, QuotaVariant, ResponseCode, Result, SieveError,
+    commands, AsyncRead, AsyncWrite, Connection, Quota, ResponseCode, Result, SieveError,
     SieveNameStr,
 };
 
 #[derive(Debug)]
 pub enum HaveSpace {
     Ok,
-    No {
-        quota: QuotaVariant,
+    InsufficientQuota {
+        quota: Quota,
         message: Option<String>,
     },
 }
@@ -36,14 +36,14 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode> Connection<STREAM, TL
             Tag::No(_) => {
                 let quota = match info.code {
                     Some(ResponseCode::Quota(variant)) => variant,
-                    None => QuotaVariant::Unspecified,
+                    None => Quota::Unspecified,
                     Some(code) => {
                         // according to spec, unknown response codes must be ignored
                         warn!("unexpected response code `{code}` in `NO` reply from `HAVESPACE` command");
-                        QuotaVariant::Unspecified
+                        Quota::Unspecified
                     }
                 };
-                HaveSpace::No {
+                HaveSpace::InsufficientQuota {
                     quota,
                     message: info.human,
                 }

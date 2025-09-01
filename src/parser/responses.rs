@@ -14,7 +14,7 @@ use winnow::token::take_while;
 use winnow::{ascii, ModalResult as PResult, Parser, Partial};
 
 use crate::parser::{tag, Capability, Response, Tag};
-use crate::{ExtensionItem, QuotaVariant, ResponseCode, ResponseInfo, SieveNameString, Version};
+use crate::{ExtensionItem, Quota, ResponseCode, ResponseInfo, SieveNameString, Version};
 
 pub type Input<'a, 'b> = &'a mut Partial<&'b str>;
 
@@ -61,9 +61,9 @@ fn code(input: Input) -> PResult<ResponseCode> {
         alt((
             Caseless("AUTH-TOO-WEAK").value(ResponseCode::AuthTooWeak),
             Caseless("ENCRYPT-NEEDED").value(ResponseCode::EncryptNeeded),
-            Caseless("QUOTA/MAXSCRIPTS").value(ResponseCode::Quota(QuotaVariant::MaxScripts)),
-            Caseless("QUOTA/MAXSIZE").value(ResponseCode::Quota(QuotaVariant::MaxSize)),
-            Caseless("QUOTA").value(ResponseCode::Quota(QuotaVariant::None)),
+            Caseless("QUOTA/MAXSCRIPTS").value(ResponseCode::Quota(Quota::MaxScripts)),
+            Caseless("QUOTA/MAXSIZE").value(ResponseCode::Quota(Quota::MaxSize)),
+            Caseless("QUOTA").value(ResponseCode::Quota(Quota::Unspecified)),
             (Caseless("SASL"), sievestring_s2c).map(|(_, sasl)| ResponseCode::Sasl(sasl)),
             (Caseless("REFERRAL"), sievestring_s2c).map(|(_, url)| ResponseCode::Referral(url)),
             Caseless("TRANSITION-NEEDED").value(ResponseCode::TransitionNeeded),
