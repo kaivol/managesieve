@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::fmt;
 #[cfg(feature = "nightly")]
 use std::ops::{Coroutine, CoroutineState};
 use std::pin::Pin;
@@ -14,7 +15,7 @@ pub enum SaslError<E> {
     #[error("authentication is completed, but the server sent further messages")]
     UnexpectedServerResponse,
 
-    #[error("internal error in the provided SASl algorithm")]
+    #[error("internal error in the provided SASl algorithm: {0}")]
     SaslError(#[source] E),
 
     #[error(
@@ -30,10 +31,21 @@ pub enum SaslError<E> {
     EncryptNeeded,
 
     #[error(
-        "the user name is valid, but the entry in the authentication database needs to be
+        "the username is valid, but the entry in the authentication database needs to be \
     updated in order to permit authentication with the specified mechanism"
     )]
     TransitionNeeded,
+
+    #[error(fmt = fmt_other)]
+    Other { message: Option<String> },
+}
+
+fn fmt_other(message: &Option<String>, formatter: &mut fmt::Formatter) -> fmt::Result {
+    write!(formatter, "unspecified authentification failure")?;
+    if let Some(msg) = message {
+        write!(formatter, ": {msg}")?;
+    }
+    Ok(())
 }
 
 pin_project! {

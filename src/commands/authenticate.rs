@@ -142,7 +142,9 @@ impl<STREAM: AsyncRead + AsyncWrite + Unpin, TLS: TlsMode>
                                 Some(ResponseCode::AuthTooWeak) => SaslError::AuthTooWeak,
                                 Some(ResponseCode::EncryptNeeded) => SaslError::EncryptNeeded,
                                 Some(ResponseCode::TransitionNeeded) => SaslError::TransitionNeeded,
-                                _ => return Err(SieveError::UnexpectedNo { info }),
+                                _ => SaslError::Other {
+                                    message: info.human,
+                                },
                             };
                             return Ok(Authenticate::Error {
                                 connection: Some(self),
