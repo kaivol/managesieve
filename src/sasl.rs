@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::fmt;
+use std::ops::Deref;
 #[cfg(feature = "nightly")]
 use std::ops::{Coroutine, CoroutineState};
 use std::pin::Pin;
@@ -48,15 +49,6 @@ fn fmt_other(message: &Option<String>, formatter: &mut fmt::Formatter) -> fmt::R
     Ok(())
 }
 
-pin_project! {
-    pub struct Sasl<'a, F: ?Sized> {
-        pub name: &'static str,
-        pub init: InitialSaslState<'a>,
-        #[pin]
-        pub f: F,
-    }
-}
-
 pub enum SaslState {
     Yielded(Vec<u8>),
     Complete,
@@ -81,95 +73,116 @@ impl SaslState {
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum InitialSaslState<'a> {
     None,
     Yielded(&'a [u8]),
     Complete(&'a [u8]),
 }
 
-pub trait SaslInner {
+pub trait Sasl<'a> {
     type Error;
+    fn name(&self) -> &'static str;
+    fn init(&self) -> InitialSaslState<'a>;
     fn resume(self: Pin<&mut Self>, arg: Vec<u8>) -> Result<SaslState, Self::Error>;
 }
 
-pub struct SaslInnerFn<F>(F);
-
-impl<F, E> SaslInner for SaslInnerFn<F>
-where
-    F: FnMut(Vec<u8>) -> Result<SaslState, E>,
-{
+impl<'a, E> Sasl<'a> for Pin<Box<dyn Sasl<'a, Error = E>>> {
     type Error = E;
 
-    fn resume(self: Pin<&mut Self>, arg: Vec<u8>) -> Result<SaslState, E> {
-        (unsafe { &mut self.get_unchecked_mut().0 })(arg)
+    fn name(&self) -> &'static str {
+        self.deref().name()
+    }
+
+    fn init(&self) -> InitialSaslState<'a> {
+        self.deref().init()
+    }
+
+    fn resume(self: Pin<&mut Self>, arg: Vec<u8>) -> Result<SaslState, Self::Error> {
+        self.as_deref_mut().resume(arg)
     }
 }
 
-impl<'a, F, E> Sasl<'a, SaslInnerFn<F>>
-where
-    F: FnMut(Vec<u8>) -> Result<SaslState, E>,
-{
-    pub fn new_fn(name: &'static str, init: InitialSaslState<'a>, f: F) -> Self {
-        Self {
-            name,
-            init,
-            f: SaslInnerFn(f),
-        }
-    }
-}
-
-pub struct SaslInnerDummy(());
-
-impl SaslInner for SaslInnerDummy {
+impl<'a> Sasl<'a> for (&'static str, &'a [u8]) {
     type Error = Infallible;
 
+    fn name(&self) -> &'static str {
+        self.0
+    }
+
+    fn init(&self) -> InitialSaslState<'a> {
+        InitialSaslState::Complete(self.1)
+    }
+
     fn resume(self: Pin<&mut Self>, _arg: Vec<u8>) -> Result<SaslState, Self::Error> {
-        unreachable!();
+        panic!()
     }
 }
 
-impl<'a> Sasl<'a, SaslInnerDummy> {
-    pub fn new_init(name: &'static str, init: &'a [u8]) -> Self {
-        Self {
-            name,
-            init: InitialSaslState::Complete(init),
-            f: SaslInnerDummy(()),
+pin_project! {
+    #[derive(Copy, Clone)]
+    pub struct SaslFn<'a, F> {
+        pub name: &'static str,
+        pub init: Option<&'a [u8]>,
+        pub f: F,
+    }
+}
+
+impl<'a, F: FnMut(Vec<u8>) -> Result<SaslState, E>, E> Sasl<'a> for SaslFn<'a, F> {
+    type Error = E;
+
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn init(&self) -> InitialSaslState<'a> {
+        match self.init {
+            None => InitialSaslState::None,
+            Some(i) => InitialSaslState::Yielded(i),
         }
     }
+
+    fn resume(self: Pin<&mut Self>, arg: Vec<u8>) -> Result<SaslState, Self::Error> {
+        let this = self.project();
+        (this.f)(arg)
+    }
 }
 
 #[cfg(feature = "nightly")]
-pub struct SaslInnerCoroutine<C>(C);
+pin_project! {
+    pub struct SaslCoroutine<'a, C> {
+        pub name: &'static str,
+        pub init: Option<&'a [u8]>,
+        #[pin] pub c: C
+    }
+}
 
 #[cfg(feature = "nightly")]
-impl<C, E> SaslInner for SaslInnerCoroutine<C>
-where
-    C: Coroutine<Vec<u8>, Return = Result<Option<Vec<u8>>, E>, Yield = Vec<u8>>,
+impl<'a, C: Coroutine<Vec<u8>, Return = Result<Option<Vec<u8>>, E>, Yield = Vec<u8>>, E> Sasl<'a>
+    for SaslCoroutine<'a, C>
 {
     type Error = E;
 
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn init(&self) -> InitialSaslState<'a> {
+        match self.init {
+            None => InitialSaslState::None,
+            Some(i) => InitialSaslState::Yielded(i),
+        }
+    }
+
     fn resume(self: Pin<&mut Self>, arg: Vec<u8>) -> Result<SaslState, E> {
-        match Coroutine::resume(unsafe { self.map_unchecked_mut(|c| &mut c.0) }, arg) {
+        let this = self.project();
+        match Coroutine::resume(this.c, arg) {
             CoroutineState::Yielded(data) => Ok(SaslState::Yielded(data)),
             CoroutineState::Complete(Err(err)) => Err(err),
             CoroutineState::Complete(Ok(Some(data))) => {
                 Ok(SaslState::CompleteWithFinalResponse(data))
             }
             CoroutineState::Complete(Ok(None)) => Ok(SaslState::Complete),
-        }
-    }
-}
-
-#[cfg(feature = "nightly")]
-impl<'a, C, E> Sasl<'a, SaslInnerCoroutine<C>>
-where
-    C: Coroutine<Vec<u8>, Return = Result<Option<Vec<u8>>, E>, Yield = Vec<u8>>,
-{
-    pub fn new_coroutine(name: &'static str, init: InitialSaslState<'a>, c: C) -> Self {
-        Self {
-            name,
-            init,
-            f: SaslInnerCoroutine(c),
         }
     }
 }
