@@ -5,16 +5,16 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::marker::PhantomData;
 
-pub use capabilities::{Capabilities, CapabilitiesError, Version};
-pub use futures::{AsyncRead, AsyncWrite};
-pub use futures_rustls::pki_types::ServerName;
-pub use sieve_name::{SieveNameError, SieveNameStr, SieveNameString};
-
 mod capabilities;
 pub mod commands;
 mod parser;
 pub mod sasl;
 mod sieve_name;
+
+pub use capabilities::{Capabilities, CapabilitiesError, Version};
+pub use futures::{AsyncRead, AsyncWrite};
+pub use futures_rustls::pki_types::ServerName;
+pub use sieve_name::{SieveNameError, SieveNameStr, SieveNameString};
 
 pub mod state {
     use futures_rustls::client::TlsStream;
@@ -102,12 +102,6 @@ pub enum SieveError {
     #[error("received an unexpected `NO` response: {info}")]
     UnexpectedNo { info: ResponseInfo },
 }
-
-// #[derive(thiserror::Error, Debug)]
-// #[error("received an unexpected `NO` response: {info}")]
-// struct UnexpectedNo {
-//     info: ResponseInfo
-// }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Quota {

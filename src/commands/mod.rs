@@ -12,9 +12,9 @@ mod start_tls;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::task::{ready, Poll};
-use std::io;
 
 use definitions::{Command, SieveWriter};
 use futures::AsyncWriteExt;

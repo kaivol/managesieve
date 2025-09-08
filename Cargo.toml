@@ -8,18 +8,18 @@ description = "Support for parsing ManageSieve protocol (RFC 5804)"
 
 [dependencies]
 futures = "0.3.30"
+pin-project-lite = "0.2.16"
 
 thiserror = "2.0.12"
 tracing = "0.1"
 
 winnow = "0.7.9"
 either = "1.6.1"
+base64 = "0.22.0"
+itoa = "1.0.15"
 
 futures-rustls = { version = "0.26.0", default-features = false, features = ["ring"] }
 rustls-platform-verifier = "0.6.0"
-base64 = "0.22.0"
-itoa = "1.0.15"
-pin-project-lite = "0.2.16"
 
 serde = { optional = true, version = "1.0.219", features = ["derive"] }
 
@@ -28,6 +28,10 @@ serde = ["dep:serde"]
 nightly = []
 
 [workspace.lints]
+
+[workspace.lints.clippy]
+# Warnings
+self_named_module_files = "warn"
 
 [lints]
 workspace = true

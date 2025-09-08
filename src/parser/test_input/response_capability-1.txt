@@ -1,8 +1,0 @@
-"IMPLEMENTATION" "Dovecot Pigeonhole"
-"SIEVE" "fileinto reject envelope encoded-character vacation subaddress comparator-i;ascii-numeric relational regex imap4flags copy include variables body enotify environment mailbox date"
-"NOTIFY" ""
-"SASL" ""
-"MAXREDIRECTS" "999999999999999999999999"
-"STARTTLS"
-"VERSION" "1.0"
-OK "Dovecot ready."
