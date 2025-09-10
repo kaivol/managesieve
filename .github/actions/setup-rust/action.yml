@@ -1,0 +1,22 @@
+name: 'init'
+description: 'init'
+inputs:
+  components:
+    description: 'Comma-separated list of components to be additionally installed'
+    required: false
+  cache:
+    description: 'Include caching'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "nightly-2025-08-26"
+        components: ${{ inputs.components }}
+    - if: ${{ inputs.cache == 'true' }}
+      name: Configure cache
+      uses: Swatinem/rust-cache@v2

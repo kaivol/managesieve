@@ -1,0 +1,43 @@
+name: CI
+
+on: [pull_request, push]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout repository
+        uses: 'actions/checkout@v4'
+      - name: Setup rust
+        uses: './.github/actions/setup-rust'
+      - name: Run `cargo test`
+        run: 'cargo test --workspace --all-features'
+  fmt:
+    name: Fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: 'actions/checkout@v4'
+      - name: Setup rust
+        uses: './.github/actions/setup-rust'
+        with:
+          components: 'rustfmt'
+          cache: 'false'
+      - name: Run `rustfmt`
+        run: 'cargo fmt --check'
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: 'actions/checkout@v4'
+      - name: Setup rust
+        uses: './.github/actions/setup-rust'
+        with:
+          components: 'clippy'
+      - name: Run `clippy`
+        run: 'cargo clippy --workspace --all-features -- -D warnings'
