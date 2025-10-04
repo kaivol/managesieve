@@ -1,5 +1,5 @@
 [package]
-name = "managesieve"
+name = "managesieve-client"
 version = "0.1.1"
 authors = ["Andy Grover <andy@groveronline.com>"]
 edition = "2021"
@@ -38,7 +38,7 @@ workspace = true
 
 [workspace]
 resolver = "2"
-members = ["managesieve-cli"]
+members = ["managesieve-client-cli"]
 
 [workspace.dependencies]
-managesieve = { path = "." }
+managesieve = { package = "managesieve-client", path = "." }

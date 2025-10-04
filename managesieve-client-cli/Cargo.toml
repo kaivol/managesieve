@@ -1,10 +1,10 @@
 [package]
-name = "managesieve-cli"
+name = "managesieve-client-cli"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "managesieve"
+name = "sieve-client"
 path = "src/main.rs"
 
 [dependencies]
